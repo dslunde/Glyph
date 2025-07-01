@@ -43,18 +43,24 @@ try:
     from nltk.tag import pos_tag
     NLTK_AVAILABLE = True
     
-    # Download required NLTK data
+    # Download required NLTK data (Python 3.13+ compatibility)
     try:
         nltk.data.find('tokenizers/punkt')
         nltk.data.find('corpora/stopwords')
-        nltk.data.find('taggers/averaged_perceptron_tagger')
+        # Try new format first, then fall back to old format
+        try:
+            nltk.data.find('taggers/averaged_perceptron_tagger_eng')
+        except LookupError:
+            nltk.data.find('taggers/averaged_perceptron_tagger')
         nltk.data.find('chunkers/maxent_ne_chunker')
         nltk.data.find('corpora/words')
     except LookupError:
         print("📦 Downloading required NLTK data...")
         nltk.download('punkt', quiet=True)
         nltk.download('stopwords', quiet=True)
+        # Download both formats for maximum compatibility
         nltk.download('averaged_perceptron_tagger', quiet=True)
+        nltk.download('averaged_perceptron_tagger_eng', quiet=True)
         nltk.download('maxent_ne_chunker', quiet=True)
         nltk.download('words', quiet=True)
         
@@ -71,27 +77,22 @@ except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 try:
-    from transformers.pipelines import pipeline
+    from transformers import pipeline  # type: ignore
     TRANSFORMERS_AVAILABLE = True
     print("✅ Transformers available")
 except ImportError:
-    try:
-        from transformers import pipeline
-        TRANSFORMERS_AVAILABLE = True
-        print("✅ Transformers available")
-    except ImportError:
-        print("❌ Transformers not available")
-        TRANSFORMERS_AVAILABLE = False
+    print("❌ Transformers not available")
+    TRANSFORMERS_AVAILABLE = False
 
 # LangSmith tracing
 try:
-    from langsmith import traceable
+    from langsmith import traceable  # type: ignore
     LANGSMITH_AVAILABLE = True
 except ImportError:
     LANGSMITH_AVAILABLE = False
     
-    def traceable(name: Optional[str] = None):
-        def decorator(func):
+    def traceable(name: Optional[str] = None):  # type: ignore
+        def decorator(func):  # type: ignore
             return func
         return decorator
 
@@ -369,7 +370,7 @@ class KnowledgeGraphBuilder:
                 chunks = ne_chunk(pos_tags)
                 
                 for chunk in chunks:
-                    if hasattr(chunk, 'label') and callable(getattr(chunk, 'label', None)):
+                    if hasattr(chunk, 'label') and callable(getattr(chunk, 'label', None)):  # type: ignore
                         entity = ' '.join([token for token, pos in chunk])
                         entities.append(entity)
             except Exception as e:
