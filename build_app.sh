@@ -111,6 +111,23 @@ EMBEDDED_SITE_PACKAGES="$EMBEDDED_PYTHON/lib/python3.13/site-packages"
     echo "⚠️  Some packages failed to install, continuing..."
 }
 
+# Copy custom Python modules to embedded site-packages
+echo "📦 Installing custom Python modules..."
+CUSTOM_PYTHON_FILES=(
+    "Sources/Glyph/PythonAPIService.py"
+    "Sources/Glyph/source_collection_workflow.py"
+)
+
+for file in "${CUSTOM_PYTHON_FILES[@]}"; do
+    if [ -f "$file" ]; then
+        filename=$(basename "$file")
+        cp "$file" "$EMBEDDED_SITE_PACKAGES/$filename"
+        echo "✅ Installed custom module: $filename"
+    else
+        echo "⚠️  Custom Python file not found: $file"
+    fi
+done
+
 echo "✅ Python $PYTHON_VERSION embedded successfully!"
 
 # Copy app icon
