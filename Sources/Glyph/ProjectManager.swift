@@ -26,7 +26,6 @@ class ProjectManager: ObservableObject {
     init() {
         setupBindings()
         loadProjects()
-        createSampleProject()
     }
     
     private func setupBindings() {
@@ -160,27 +159,6 @@ class ProjectManager: ObservableObject {
     }
     
     // MARK: - Sample Data Creation
-    
-    private func createSampleProject() {
-        if projects.isEmpty {
-            let sampleProject = Project(
-                name: "Spider-Man Universe Analysis",
-                description: "Exploring the interconnected web of Spider-Man's world",
-                topic: "Spider-Man character relationships and story elements",
-                depth: .moderate,
-                sourcePreferences: [.reliable, .insider],
-                filePaths: [],
-                urls: [],
-                isOnline: true
-            )
-            projects.append(sampleProject)
-            selectedProject = sampleProject
-            
-            Task {
-                await initializeSampleGraph(for: sampleProject)
-            }
-        }
-    }
     
     @MainActor
     private func initializeSampleGraph(for project: Project) async {
