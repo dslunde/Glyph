@@ -1,12 +1,15 @@
 import SwiftUI
+import AppKit
 
 @main
 struct GlyphApp: App {
     @StateObject private var projectManager = ProjectManager()
+    @StateObject private var authManager = AuthenticationManager()
     
     var body: some Scene {
         WindowGroup {
-            NavigationSplitView {
+            if authManager.isAuthenticated {
+                NavigationSplitView {
                 // Sidebar with project list
                 VStack(alignment: .leading, spacing: 0) {
                     // Header
@@ -39,11 +42,23 @@ struct GlyphApp: App {
                         ForEach(projectManager.projects) { project in
                             ProjectRowView(project: project)
                                 .tag(project)
+                                .contextMenu {
+                                    Button("Delete Project", role: .destructive) {
+                                        projectManager.deleteProject(project)
+                                    }
+                                }
                         }
                         .onDelete(perform: deleteProjects)
                     }
                     .listStyle(SidebarListStyle())
                     .navigationTitle("")
+                    .onKeyPress(.delete) {
+                        if let selectedProject = projectManager.selectedProject {
+                            projectManager.deleteProject(selectedProject)
+                            return .handled
+                        }
+                        return .ignored
+                    }
                     
                     Divider()
                     
@@ -80,6 +95,7 @@ struct GlyphApp: App {
                 if let selectedProject = projectManager.selectedProject {
                     ProjectDetailView(project: selectedProject)
                         .environmentObject(projectManager)
+                        .environmentObject(authManager)
                 } else {
                     // Welcome screen
                     VStack(spacing: 20) {
@@ -109,6 +125,17 @@ struct GlyphApp: App {
                             .controlSize(.large)
                         }
                         
+                        HStack {
+                            Text("Logged in as \(authManager.currentUser ?? "Unknown")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Button("Logout") {
+                                authManager.logout()
+                            }
+                            .font(.caption)
+                        }
+                        
                         if projectManager.isPythonInitialized {
                             HStack {
                                 Image(systemName: "checkmark.circle.fill")
@@ -131,14 +158,19 @@ struct GlyphApp: App {
                     .background(Color(nsColor: .textBackgroundColor))
                 }
             }
-            .sheet(isPresented: $projectManager.showingCreateProject) {
-                CreateProjectView()
-                    .environmentObject(projectManager)
-            }
-            .alert("Error", isPresented: $projectManager.showingError) {
-                Button("OK") { }
-            } message: {
-                Text(projectManager.errorMessage ?? "Unknown error")
+                .sheet(isPresented: $projectManager.showingCreateProject) {
+                    CreateProjectView()
+                        .environmentObject(projectManager)
+                }
+                .alert("Error", isPresented: $projectManager.showingError) {
+                    Button("OK") { }
+                } message: {
+                    Text(projectManager.errorMessage ?? "Unknown error")
+                }
+            } else {
+                // Login View
+                LoginView()
+                    .environmentObject(authManager)
             }
         }
     }
@@ -162,11 +194,41 @@ struct ProjectRowView: View {
                 .font(.headline)
                 .lineLimit(1)
             
-            if !project.description.isEmpty {
+            if !project.topic.isEmpty {
+                Text(project.topic)
+                    .font(.caption)
+                    .foregroundColor(.blue)
+                    .lineLimit(1)
+            } else if !project.description.isEmpty {
                 Text(project.description)
                     .font(.caption)
                     .foregroundColor(.secondary)
-                    .lineLimit(2)
+                    .lineLimit(1)
+            }
+            
+            // Project configuration badges
+            HStack(spacing: 4) {
+                // Depth badge
+                Text(project.depth.displayName)
+                    .font(.caption2)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.purple.opacity(0.2))
+                    .foregroundColor(.purple)
+                    .cornerRadius(4)
+                
+                // Sensitivity badge (only show if high)
+                if project.sensitivityLevel == .high {
+                    Text("High Sensitivity")
+                        .font(.caption2)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Color.orange.opacity(0.2))
+                        .foregroundColor(.orange)
+                        .cornerRadius(4)
+                }
+                
+                Spacer()
             }
             
             HStack {
@@ -177,6 +239,22 @@ struct ProjectRowView: View {
                 Label("\(project.graphData?.edges.count ?? 0)", systemImage: "arrow.right")
                     .font(.caption2)
                     .foregroundColor(.secondary)
+                
+                // Source preferences indicator
+                if !project.sourcePreferences.isEmpty {
+                    HStack(spacing: 2) {
+                        ForEach(project.sourcePreferences.prefix(3), id: \.self) { preference in
+                            Circle()
+                                .fill(preference.color)
+                                .frame(width: 6, height: 6)
+                        }
+                        if project.sourcePreferences.count > 3 {
+                            Text("+\(project.sourcePreferences.count - 3)")
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
                 
                 Spacer()
                 
@@ -197,141 +275,781 @@ struct CreateProjectView: View {
     
     @State private var name = ""
     @State private var description = ""
-    
-    var body: some View {
-        NavigationView {
-            VStack(spacing: 20) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Project Name")
-                        .font(.headline)
-                    TextField("Enter project name", text: $name)
-                        .textFieldStyle(.roundedBorder)
-                }
-                
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Description")
-                        .font(.headline)
-                    TextField("Enter project description (optional)", text: $description, axis: .vertical)
-                        .textFieldStyle(.roundedBorder)
-                        .lineLimit(3...6)
-                }
-                
-                Spacer()
-            }
-            .padding()
-            .navigationTitle("New Project")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        projectManager.createProject(name: name, description: description)
-                        dismiss()
-                    }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                }
-            }
-        }
-        .frame(width: 400, height: 300)
-    }
-}
-
-struct ProjectDetailView: View {
-    let project: Project
-    @EnvironmentObject private var projectManager: ProjectManager
+    @State private var topic = ""
+    @State private var depth: ProjectDepth = .moderate
+    @State private var sourcePreferences: Set<SourcePreference> = [.reliable]
+    @State private var filePaths: [String] = [""]
+    @State private var urls: [String] = [""]
+    @State private var hypotheses = ""
+    @State private var controversialAspects = ""
+    @State private var sensitivityLevel: SensitivityLevel = .medium
     
     var body: some View {
         VStack(spacing: 0) {
-            // Project header
+            // Header
             HStack {
-                VStack(alignment: .leading) {
-                    Text(project.name)
-                        .font(.title)
-                        .fontWeight(.bold)
-                    
-                    if !project.description.isEmpty {
-                        Text(project.description)
-                            .font(.subheadline)
-                            .foregroundColor(.secondary)
-                    }
-                }
+                Text("New Project")
+                    .font(.title2)
+                    .fontWeight(.bold)
                 
                 Spacer()
                 
-                // Analysis button
-                Button(action: {
-                    Task {
-                        await projectManager.analyzeCurrentProject()
+                HStack(spacing: 12) {
+                    Button("Cancel") {
+                        dismiss()
                     }
-                }) {
-                    HStack {
-                        if projectManager.isAnalyzing {
-                            ProgressView()
-                                .scaleEffect(0.8)
-                        } else {
-                            Image(systemName: "sparkles")
-                        }
-                        Text(projectManager.isAnalyzing ? "Analyzing..." : "Analyze")
+                    .buttonStyle(.bordered)
+                    
+                    Button("Create") {
+                        createProject()
                     }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!formIsValid)
                 }
-                .buttonStyle(.borderedProminent)
-                .disabled(projectManager.isAnalyzing)
             }
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
             
             Divider()
             
-            // Main content
-            if let graphData = project.graphData, !graphData.nodes.isEmpty {
-                HSplitView {
-                    // Graph visualization
-                    GraphVisualizationView(graphData: graphData)
-                        .frame(minWidth: 400)
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Basic Information
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Basic Information")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Project Name")
+                                .font(.headline)
+                            TextField("Enter project name", text: $name)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Description")
+                                .font(.headline)
+                            TextField("Enter project description (optional)", text: $description, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(2...4)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Topic")
+                                .font(.headline)
+                            TextField("Main research topic or question", text: $topic)
+                                .textFieldStyle(.roundedBorder)
+                        }
+                    }
                     
-                    // Analysis panel
-                    AnalysisPanelView(graphData: graphData, insights: projectManager.insights)
-                        .frame(minWidth: 300, maxWidth: 400)
+                    Divider()
+                    
+                    // Analysis Configuration
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Analysis Configuration")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Depth Level")
+                                .font(.headline)
+                            
+                            Picker("Depth", selection: $depth) {
+                                ForEach(ProjectDepth.allCases, id: \.self) { depth in
+                                    VStack(alignment: .leading) {
+                                        Text(depth.displayName)
+                                            .font(.subheadline)
+                                        Text(depth.description)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .tag(depth)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Source Preferences")
+                                .font(.headline)
+                            Text("Select types of sources to include")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            // Custom grid layout with specific order
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    // Top Left: Reliable
+                                    SourcePreferenceCard(
+                                        preference: .reliable,
+                                        isSelected: sourcePreferences.contains(.reliable)
+                                    ) {
+                                        toggleSourcePreference(.reliable)
+                                    }
+                                    
+                                    // Top Right: Unreliable
+                                    SourcePreferenceCard(
+                                        preference: .unreliable,
+                                        isSelected: sourcePreferences.contains(.unreliable)
+                                    ) {
+                                        toggleSourcePreference(.unreliable)
+                                    }
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    // Bottom Left: Insider
+                                    SourcePreferenceCard(
+                                        preference: .insider,
+                                        isSelected: sourcePreferences.contains(.insider)
+                                    ) {
+                                        toggleSourcePreference(.insider)
+                                    }
+                                    
+                                    // Bottom Right: Outsider
+                                    SourcePreferenceCard(
+                                        preference: .outsider,
+                                        isSelected: sourcePreferences.contains(.outsider)
+                                    ) {
+                                        toggleSourcePreference(.outsider)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // File and Folder Paths
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("File/Folder Paths")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                Button(action: { filePaths.append("") }) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            Text("Add local file or folder paths to analyze")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            ForEach(filePaths.indices, id: \.self) { index in
+                                HStack {
+                                    TextField("Enter file or folder path", text: $filePaths[index])
+                                        .textFieldStyle(.roundedBorder)
+                                    
+                                    Button(action: { selectFile(for: index) }) {
+                                        Image(systemName: "folder")
+                                            .foregroundColor(.blue)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Browse for file or folder")
+                                    
+                                    if filePaths.count > 1 {
+                                        Button(action: { filePaths.remove(at: index) }) {
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundColor(.red)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // URLs
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("URLs")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                Button(action: { urls.append("") }) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            Text("Add web URLs to analyze (will be processed in offline mode)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            ForEach(urls.indices, id: \.self) { index in
+                                HStack {
+                                    TextField("Enter URL (https://...)", text: $urls[index])
+                                        .textFieldStyle(.roundedBorder)
+                                    
+                                    if urls.count > 1 {
+                                        Button(action: { urls.remove(at: index) }) {
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundColor(.red)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Sensitivity Level")
+                                .font(.headline)
+                            
+                            HStack {
+                                Text("Algorithm sensitivity for finding gaps and contradictions")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Spacer()
+                                
+                                Menu {
+                                    ForEach(SensitivityLevel.allCases, id: \.self) { level in
+                                        Button(action: { sensitivityLevel = level }) {
+                                            HStack {
+                                                Text(level.displayName)
+                                                if sensitivityLevel == level {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(sensitivityLevel.displayName)
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color(nsColor: .controlBackgroundColor))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                    )
+                                }
+                                .buttonStyle(.plain)
+                            }
+                        }
+                    }
+                    
+                    Divider()
+                    
+                    // Advanced Options
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("Advanced Options")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Hypotheses")
+                                .font(.headline)
+                            TextField("Initial hypotheses or assumptions (optional)", text: $hypotheses, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(2...4)
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Controversial Aspects")
+                                .font(.headline)
+                            TextField("Areas of potential controversy or bias (optional)", text: $controversialAspects, axis: .vertical)
+                                .textFieldStyle(.roundedBorder)
+                                .lineLimit(2...4)
+                        }
+                    }
+                    
+                    Spacer(minLength: 20)
                 }
-            } else {
-                // Empty state
-                VStack(spacing: 20) {
-                    Image(systemName: "network")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary)
-                    
-                    Text("No graph data available")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                    
-                    Text("Graph data is being initialized...")
-                        .font(.body)
-                        .foregroundColor(.secondary)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding()
             }
+        }
+        .frame(width: 700, height: 800)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private var formIsValid: Bool {
+        let nameValid = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let topicValid = !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let sourcePrefsValid = !sourcePreferences.isEmpty
+        
+        // File paths validation: can have at most 1 empty field (n paths, at least n-1 filled)
+        let nonEmptyPaths = filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let requiredFilledPaths = max(0, filePaths.count - 1) // Can leave 1 empty
+        let filePathsValid = nonEmptyPaths.count >= requiredFilledPaths
+        
+        // URLs validation: can have at most 1 empty field (m URLs, at least m-1 filled)
+        let nonEmptyUrls = urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let requiredFilledUrls = max(0, urls.count - 1) // Can leave 1 empty
+        let urlsValid = nonEmptyUrls.count >= requiredFilledUrls
+
+        return (nameValid && topicValid && sourcePrefsValid && filePathsValid && urlsValid)
+    }
+    
+    private func toggleSourcePreference(_ preference: SourcePreference) {
+        if sourcePreferences.contains(preference) {
+            sourcePreferences.remove(preference)
+        } else {
+            sourcePreferences.insert(preference)
+        }
+    }
+    
+    private func selectFile(for index: Int) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.canCreateDirectories = false
+        
+        if panel.runModal() == .OK {
+            if let url = panel.url {
+                filePaths[index] = url.path
+            }
+        }
+    }
+    
+    private func createProject() {
+        let validFilePaths = filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let validUrls = urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        
+        projectManager.createProject(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: Array(sourcePreferences),
+            filePaths: validFilePaths,
+            urls: validUrls,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel
+        )
+        dismiss()
+    }
+}
+
+// MARK: - Source Preference Card Component
+
+struct SourcePreferenceCard: View {
+    let preference: SourcePreference
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(preference.color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(preference.displayName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Text(preference.description)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? preference.color.opacity(0.1) : Color.clear)
+                    .stroke(preference.color.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
+    }
+}
+
+struct ProjectDetailView: View {
+    let project: Project
+    @EnvironmentObject private var projectManager: ProjectManager
+    @State private var showingProjectInfo = false
+    @State private var selectedTab = 0
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Project header
+            HStack {
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Text(project.name)
+                            .font(.title)
+                            .fontWeight(.bold)
+                        
+                        Button(action: { showingProjectInfo = true }) {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                    
+                    if !project.topic.isEmpty {
+                        Text(project.topic)
+                            .font(.subheadline)
+                            .foregroundColor(.blue)
+                    } else if !project.description.isEmpty {
+                        Text(project.description)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    // Configuration badges
+                    HStack(spacing: 8) {
+                        Text(project.depth.displayName)
+                            .font(.caption)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.purple.opacity(0.2))
+                            .foregroundColor(.purple)
+                            .cornerRadius(6)
+                        
+                        if project.sensitivityLevel == .high {
+                            Text("High Sensitivity")
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(Color.orange.opacity(0.2))
+                                .foregroundColor(.orange)
+                                .cornerRadius(6)
+                        }
+                        
+                        HStack(spacing: 4) {
+                            ForEach(project.sourcePreferences.prefix(3), id: \.self) { preference in
+                                Circle()
+                                    .fill(preference.color)
+                                    .frame(width: 8, height: 8)
+                            }
+                            if project.sourcePreferences.count > 3 {
+                                Text("+\(project.sourcePreferences.count - 3)")
+                                    .font(.caption2)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                Spacer()
+                
+                VStack(spacing: 8) {
+                    // Analysis button (disabled for now)
+                    Button(action: {
+                        // Coming soon - do nothing for now
+                    }) {
+                        HStack {
+                            Image(systemName: "sparkles")
+                            Text("Analyze")
+                        }
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(true)
+                    .overlay(
+                        // Invisible overlay to capture hover for tooltip since disabled buttons don't show help
+                        Rectangle()
+                            .fill(Color.clear)
+                            .help("Coming Soon: Advanced analysis features")
+                    )
+                }
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            
+            Divider()
+            
+            // Tab View as specified in PRD
+            TabView(selection: $selectedTab) {
+                // Learning Plan Tab
+                LearningPlanView(project: project)
+                    .tabItem {
+                        Image(systemName: "doc.text")
+                        Text("Learning Plan")
+                    }
+                    .tag(0)
+                
+                // Knowledge Graph Tab
+                KnowledgeGraphView(project: project)
+                    .environmentObject(projectManager)
+                    .tabItem {
+                        Image(systemName: "network")
+                        Text("Knowledge Graph")
+                    }
+                    .tag(1)
+            }
+        }
+        .sheet(isPresented: $showingProjectInfo) {
+            ProjectInfoView(project: project)
         }
     }
 }
 
-// Placeholder views for missing components
+// MARK: - Interactive Graph Visualization
+
 struct GraphVisualizationView: View {
-    let graphData: GraphData
+    @State private var graphData: GraphData
+    @State private var selectedNode: GraphNode?
+    @State private var zoomScale: CGFloat = 1.0
+    @State private var panOffset: CGSize = .zero
+    @State private var draggedNode: GraphNode?
+    @State private var showingNodeDetails = false
+    @State private var cursorPosition: CGPoint = .zero
+    
+    init(graphData: GraphData) {
+        self._graphData = State(initialValue: graphData)
+    }
     
     var body: some View {
-        VStack {
-            Text("Graph Visualization")
-                .font(.headline)
-            Text("\(graphData.nodes.count) nodes, \(graphData.edges.count) edges")
-                .font(.caption)
-                .foregroundColor(.secondary)
+        GeometryReader { geometry in
+            ZStack {
+                // Background
+                Color(nsColor: .controlBackgroundColor)
+                    .onTapGesture {
+                        selectedNode = nil
+                        showingNodeDetails = false
+                    }
+                
+                // Graph Canvas
+                Canvas { context, size in
+                    context.clipToLayer(opacity: 1) { context in
+                        // Apply zoom and pan transformations
+                        context.translateBy(x: panOffset.width, y: panOffset.height)
+                        context.scaleBy(x: zoomScale, y: zoomScale)
+                        
+                        // Draw edges first (so they appear behind nodes)
+                        drawEdges(context: context)
+                        
+                        // Draw nodes
+                        drawNodes(context: context)
+                        
+                        // Draw cursor position indicator
+                        let cursorInGraph = CGPoint(
+                            x: (cursorPosition.x - panOffset.width) / zoomScale,
+                            y: (cursorPosition.y - panOffset.height) / zoomScale
+                        )
+                        
+                        let cursorRect = CGRect(x: cursorInGraph.x - 5, y: cursorInGraph.y - 5, width: 10, height: 10)
+                        context.fill(Path(ellipseIn: cursorRect), with: .color(.red))
+                    }
+                }
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        cursorPosition = location
+                    case .ended:
+                        break
+                    }
+                }
+                .gesture(
+                    SimultaneousGesture(
+                        // Pan gesture
+                        DragGesture()
+                            .onChanged { value in
+                                if draggedNode == nil {
+                                    panOffset = value.translation
+                                }
+                            },
+                        
+                        // Zoom gesture
+                        MagnificationGesture()
+                            .onChanged { value in
+                                zoomScale = max(0.1, min(3.0, value))
+                            }
+                    )
+                )
+                .overlay(
+                    // Node interaction overlay
+                    ForEach(graphData.nodes) { node in
+                        let screenPos = nodeScreenPosition(node: node, canvasSize: geometry.size)
+                        
+                        Circle()
+                            .fill(Color.clear)
+                            .frame(width: 60, height: 60)
+                            .position(screenPos)
+                            .onTapGesture {
+                                selectedNode = node
+                                showingNodeDetails = true
+                            }
+                            .gesture(
+                                DragGesture()
+                                    .onChanged { value in
+                                        draggedNode = node
+                                        updateNodePosition(node: node, offset: value.translation, canvasSize: geometry.size)
+                                    }
+                                    .onEnded { _ in
+                                        draggedNode = nil
+                                    }
+                            )
+                    }
+                )
+                
+                // Graph controls
+                VStack {
+                    HStack {
+                        VStack(spacing: 8) {
+                            Button(action: { zoomScale = min(3.0, zoomScale * 1.2) }) {
+                                Image(systemName: "plus.magnifyingglass")
+                                    .font(.title2)
+                            }
+                            .buttonStyle(.bordered)
+                            
+                            Button(action: { zoomScale = max(0.1, zoomScale / 1.2) }) {
+                                Image(systemName: "minus.magnifyingglass")
+                                    .font(.title2)
+                            }
+                            .buttonStyle(.bordered)
+                            
+                            Button(action: resetView) {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.title2)
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding()
+                        
+                        Spacer()
+                        
+                        // Debug info
+                        VStack(alignment: .trailing, spacing: 4) {
+                            Text("\(graphData.nodes.count) nodes")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("\(graphData.edges.count) edges")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Zoom: \(Int(zoomScale * 100))%")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Text("Cursor: (\(Int(cursorPosition.x)), \(Int(cursorPosition.y)))")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            Text("Pan: (\(Int(panOffset.width)), \(Int(panOffset.height)))")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            if let firstNode = graphData.nodes.first {
+                                Text("First node: (\(Int(firstNode.position.x)), \(Int(firstNode.position.y)))")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .padding()
+                    }
+                    
+                    Spacer()
+                }
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(nsColor: .textBackgroundColor))
+        .sheet(isPresented: $showingNodeDetails) {
+            if let node = selectedNode {
+                NodeDetailView(node: binding(for: node))
+                    .environmentObject(GraphViewModel(graphData: $graphData))
+            }
+        }
+        .onAppear {
+            resetView()
+        }
+    }
+    
+    private func drawEdges(context: GraphicsContext) {
+        for edge in graphData.edges {
+            guard let sourceNode = graphData.nodes.first(where: { $0.id == edge.sourceId }),
+                  let targetNode = graphData.nodes.first(where: { $0.id == edge.targetId }) else {
+                continue
+            }
+            
+            let path = Path { path in
+                path.move(to: sourceNode.position)
+                path.addLine(to: targetNode.position)
+            }
+            
+            context.stroke(path, with: .color(.secondary), lineWidth: 2.0 * edge.weight)
+        }
+    }
+    
+    private func drawNodes(context: GraphicsContext) {
+        for node in graphData.nodes {
+            let isSelected = selectedNode?.id == node.id
+            let isDragged = draggedNode?.id == node.id
+            
+            // Node circle
+            let nodeSize: CGFloat = isSelected ? 50 : (isDragged ? 45 : 40)
+            let nodeRect = CGRect(
+                x: node.position.x - nodeSize/2,
+                y: node.position.y - nodeSize/2,
+                width: nodeSize,
+                height: nodeSize
+            )
+            
+            context.fill(
+                Path(ellipseIn: nodeRect),
+                with: .color(isSelected ? node.type.color.opacity(0.8) : node.type.color.opacity(0.6))
+            )
+            
+            context.stroke(
+                Path(ellipseIn: nodeRect),
+                with: .color(isSelected ? .primary : .secondary),
+                lineWidth: isSelected ? 3 : 1
+            )
+            
+            // Node label
+            let labelRect = CGRect(
+                x: node.position.x - 60,
+                y: node.position.y + nodeSize/2 + 5,
+                width: 120,
+                height: 20
+            )
+            
+            context.draw(
+                Text(node.label)
+                    .font(.caption)
+                    .foregroundColor(.primary),
+                in: labelRect
+            )
+        }
+    }
+    
+    private func nodeScreenPosition(node: GraphNode, canvasSize: CGSize) -> CGPoint {
+        let transformedX = (node.position.x * zoomScale) + panOffset.width
+        let transformedY = (node.position.y * zoomScale) + panOffset.height
+        return CGPoint(x: transformedX, y: transformedY)
+    }
+    
+    private func updateNodePosition(node: GraphNode, offset: CGSize, canvasSize: CGSize) {
+        if let index = graphData.nodes.firstIndex(where: { $0.id == node.id }) {
+            let newX = node.position.x + offset.width / zoomScale
+            let newY = node.position.y + offset.height / zoomScale
+            graphData.nodes[index].position = CGPoint(x: newX, y: newY)
+        }
+    }
+    
+    private func resetView() {
+        zoomScale = 1.0
+        
+        // Center the view on the graph nodes
+        if !graphData.nodes.isEmpty {
+            let minX = graphData.nodes.map { $0.position.x }.min() ?? 0
+            let maxX = graphData.nodes.map { $0.position.x }.max() ?? 0
+            let minY = graphData.nodes.map { $0.position.y }.min() ?? 0
+            let maxY = graphData.nodes.map { $0.position.y }.max() ?? 0
+            
+            let centerX = (minX + maxX) / 2
+            let centerY = (minY + maxY) / 2
+            
+            // Offset to center the graph in the view (assuming 400x300 visible area)
+            panOffset = CGSize(width: 200 - centerX, height: 150 - centerY)
+        } else {
+            panOffset = .zero
+        }
+    }
+    
+    private func binding(for node: GraphNode) -> Binding<GraphNode> {
+        guard let index = graphData.nodes.firstIndex(where: { $0.id == node.id }) else {
+            return .constant(node)
+        }
+        return $graphData.nodes[index]
     }
 }
 
@@ -360,5 +1078,543 @@ struct AnalysisPanelView: View {
         }
         .padding()
         .background(Color(nsColor: .controlBackgroundColor))
+    }
+}
+
+// MARK: - Graph Supporting Views and ViewModels
+
+class GraphViewModel: ObservableObject {
+    @Binding var graphData: GraphData
+    
+    init(graphData: Binding<GraphData>) {
+        self._graphData = graphData
+    }
+    
+    func addNode(_ node: GraphNode) {
+        graphData.nodes.append(node)
+        graphData.metadata.totalNodes = graphData.nodes.count
+    }
+    
+    func removeNode(_ node: GraphNode) {
+        graphData.nodes.removeAll { $0.id == node.id }
+        // Remove associated edges
+        graphData.edges.removeAll { $0.sourceId == node.id || $0.targetId == node.id }
+        graphData.metadata.totalNodes = graphData.nodes.count
+        graphData.metadata.totalEdges = graphData.edges.count
+    }
+    
+    func updateNode(_ node: GraphNode) {
+        if let index = graphData.nodes.firstIndex(where: { $0.id == node.id }) {
+            graphData.nodes[index] = node
+        }
+    }
+    
+    func addEdge(_ edge: GraphEdge) {
+        graphData.edges.append(edge)
+        graphData.metadata.totalEdges = graphData.edges.count
+    }
+    
+    func removeEdge(_ edge: GraphEdge) {
+        graphData.edges.removeAll { $0.id == edge.id }
+        graphData.metadata.totalEdges = graphData.edges.count
+    }
+}
+
+struct NodeDetailView: View {
+    @Binding var node: GraphNode
+    @EnvironmentObject var graphViewModel: GraphViewModel
+    @Environment(\.dismiss) private var dismiss
+    
+    @State private var editedLabel: String
+    @State private var editedType: NodeType
+    @State private var showingDeleteConfirmation = false
+    
+    init(node: Binding<GraphNode>) {
+        self._node = node
+        self._editedLabel = State(initialValue: node.wrappedValue.label)
+        self._editedType = State(initialValue: node.wrappedValue.type)
+    }
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Node Information") {
+                    HStack {
+                        Image(systemName: editedType.iconName)
+                            .foregroundColor(editedType.color)
+                            .font(.title2)
+                        
+                        VStack(alignment: .leading) {
+                            TextField("Node Label", text: $editedLabel)
+                                .font(.headline)
+                            
+                            Text("Type: \(editedType.displayName)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                    
+                    Picker("Node Type", selection: $editedType) {
+                        ForEach(NodeType.allCases, id: \.self) { type in
+                            HStack {
+                                Image(systemName: type.iconName)
+                                    .foregroundColor(type.color)
+                                Text(type.displayName)
+                            }
+                            .tag(type)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                }
+                
+                Section("Properties") {
+                    if node.properties.isEmpty {
+                        Text("No properties defined")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    } else {
+                        ForEach(Array(node.properties.keys.sorted()), id: \.self) { key in
+                            HStack {
+                                Text(key)
+                                    .fontWeight(.medium)
+                                Spacer()
+                                Text(node.properties[key] ?? "")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                Section("Position") {
+                    HStack {
+                        Text("X: \(Int(node.position.x))")
+                        Spacer()
+                        Text("Y: \(Int(node.position.y))")
+                    }
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                }
+                
+                Section("Actions") {
+                    Button(action: {
+                        showingDeleteConfirmation = true
+                    }) {
+                        HStack {
+                            Image(systemName: "trash")
+                            Text("Delete Node")
+                        }
+                        .foregroundColor(.red)
+                    }
+                }
+            }
+            .navigationTitle("Node Details")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+                
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        saveChanges()
+                        dismiss()
+                    }
+                    .disabled(editedLabel.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .alert("Delete Node", isPresented: $showingDeleteConfirmation) {
+                Button("Delete", role: .destructive) {
+                    graphViewModel.removeNode(node)
+                    dismiss()
+                }
+                Button("Cancel", role: .cancel) { }
+            } message: {
+                Text("Are you sure you want to delete this node? This action cannot be undone and will also remove all connected edges.")
+            }
+        }
+        .frame(width: 400, height: 500)
+    }
+    
+    private func saveChanges() {
+        node.label = editedLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+        node.type = editedType
+        graphViewModel.updateNode(node)
+    }
+}
+
+// MARK: - Project Information View
+
+struct ProjectInfoView: View {
+    let project: Project
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        NavigationView {
+            Form {
+                Section("Basic Information") {
+                    LabeledContent("Name", value: project.name)
+                    
+                    if !project.description.isEmpty {
+                        LabeledContent("Description", value: project.description)
+                    }
+                    
+                    if !project.topic.isEmpty {
+                        LabeledContent("Topic", value: project.topic)
+                    }
+                    
+                    LabeledContent("Created", value: project.createdAt.formatted(date: .abbreviated, time: .shortened))
+                    LabeledContent("Last Modified", value: project.lastModified.formatted(date: .abbreviated, time: .shortened))
+                }
+                
+                Section("Analysis Configuration") {
+                    HStack {
+                        Text("Depth Level")
+                        Spacer()
+                        Text(project.depth.displayName)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.purple.opacity(0.2))
+                            .foregroundColor(.purple)
+                            .cornerRadius(6)
+                    }
+                    
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Source Preferences")
+                            .fontWeight(.medium)
+                        
+                        LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 8) {
+                            ForEach(project.sourcePreferences, id: \.self) { preference in
+                                HStack {
+                                    Circle()
+                                        .fill(preference.color)
+                                        .frame(width: 8, height: 8)
+                                    Text(preference.displayName)
+                                        .font(.caption)
+                                    Spacer()
+                                }
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                                .background(preference.color.opacity(0.1))
+                                .cornerRadius(6)
+                            }
+                        }
+                    }
+                    
+                    HStack {
+                        Text("Sensitivity Level")
+                        Spacer()
+                        Text(project.sensitivityLevel.displayName)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(project.sensitivityLevel == .high ? Color.orange.opacity(0.2) : Color.gray.opacity(0.2))
+                            .foregroundColor(project.sensitivityLevel == .high ? .orange : .secondary)
+                            .cornerRadius(6)
+                    }
+                }
+                
+                if !project.hypotheses.isEmpty || !project.controversialAspects.isEmpty {
+                    Section("Advanced Options") {
+                        if !project.hypotheses.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Hypotheses")
+                                    .fontWeight(.medium)
+                                Text(project.hypotheses)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        
+                        if !project.controversialAspects.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Controversial Aspects")
+                                    .fontWeight(.medium)
+                                Text(project.controversialAspects)
+                                    .font(.body)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                }
+                
+                Section("Graph Statistics") {
+                    if let graphData = project.graphData {
+                        LabeledContent("Nodes", value: "\(graphData.nodes.count)")
+                        LabeledContent("Edges", value: "\(graphData.edges.count)")
+                        
+                        if let lastAnalysis = graphData.metadata.lastAnalysis {
+                            LabeledContent("Last Analysis", value: lastAnalysis.formatted(date: .abbreviated, time: .shortened))
+                        }
+                        
+                        if !graphData.metadata.algorithms.isEmpty {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Applied Algorithms")
+                                    .fontWeight(.medium)
+                                Text(graphData.metadata.algorithms.joined(separator: ", "))
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } else {
+                        Text("No graph data available")
+                            .foregroundColor(.secondary)
+                            .italic()
+                    }
+                }
+            }
+            .navigationTitle("Project Information")
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+        .frame(width: 500, height: 600)
+    }
+}
+
+// MARK: - Authentication Views
+
+struct LoginView: View {
+    @EnvironmentObject private var authManager: AuthenticationManager
+    @State private var username = ""
+    @State private var password = ""
+    @State private var isCreatingAccount = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
+    var body: some View {
+        VStack(spacing: 30) {
+            // App branding
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 80))
+                    .foregroundColor(.purple)
+                
+                VStack(spacing: 8) {
+                    Text("Glyph")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Knowledge Graph Explorer")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            // Login form
+            VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Username")
+                        .font(.headline)
+                    TextField("Enter username", text: $username)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Password")
+                        .font(.headline)
+                    SecureField("Enter password", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                
+                VStack(spacing: 12) {
+                    Button(action: performLogin) {
+                        Text(isCreatingAccount ? "Create Account" : "Login")
+                            .frame(width: 280)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(username.isEmpty || password.isEmpty)
+                    
+                    Button(action: { isCreatingAccount.toggle() }) {
+                        Text(isCreatingAccount ? "Already have an account? Login" : "Need an account? Create one")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                }
+            }
+            
+            Text("Sessions timeout after 1 hour of inactivity")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
+        }
+    }
+    
+    private func performLogin() {
+        if isCreatingAccount {
+            if password.count < 6 {
+                errorMessage = "Password must be at least 6 characters"
+                showingError = true
+                return
+            }
+            
+            if authManager.createAccount(username: username, password: password) {
+                // Success - authManager will handle state
+            } else {
+                errorMessage = "Failed to create account"
+                showingError = true
+            }
+        } else {
+            if authManager.login(username: username, password: password) {
+                // Success - authManager will handle state
+            } else {
+                errorMessage = "Invalid username or password"
+                showingError = true
+            }
+        }
+    }
+}
+
+// MARK: - Tab Views
+
+struct LearningPlanView: View {
+    let project: Project
+    @State private var learningPlanText: String
+    @State private var isEditing = false
+    
+    init(project: Project) {
+        self.project = project
+        self._learningPlanText = State(initialValue: project.learningPlan)
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Learning Plan")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: { isEditing.toggle() }) {
+                    Text(isEditing ? "View" : "Edit")
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            
+            Divider()
+            
+            // Content
+            if isEditing {
+                // Rich text editor
+                ScrollView {
+                    TextEditor(text: $learningPlanText)
+                        .font(.body)
+                        .padding()
+                }
+            } else {
+                // Rendered markdown view
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Simple markdown rendering for demo
+                        ForEach(learningPlanText.components(separatedBy: "\n"), id: \.self) { line in
+                            if line.hasPrefix("# ") {
+                                Text(String(line.dropFirst(2)))
+                                    .font(.title)
+                                    .fontWeight(.bold)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else if line.hasPrefix("## ") {
+                                Text(String(line.dropFirst(3)))
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 8)
+                            } else if line.hasPrefix("### ") {
+                                Text(String(line.dropFirst(4)))
+                                    .font(.title3)
+                                    .fontWeight(.medium)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 4)
+                            } else if line.hasPrefix("- ") {
+                                HStack(alignment: .top) {
+                                    Text("•")
+                                        .font(.body)
+                                    Text(String(line.dropFirst(2)))
+                                        .font(.body)
+                                    Spacer()
+                                }
+                                .padding(.leading, 16)
+                            } else if line.hasPrefix("1. ") || line.hasPrefix("2. ") || line.hasPrefix("3. ") || line.hasPrefix("4. ") {
+                                HStack(alignment: .top) {
+                                    Text(String(line.prefix(3)))
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                    Text(String(line.dropFirst(3)))
+                                        .font(.body)
+                                    Spacer()
+                                }
+                                .padding(.leading, 16)
+                            } else if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(line)
+                                    .font(.body)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+    }
+}
+
+struct KnowledgeGraphView: View {
+    let project: Project
+    @EnvironmentObject private var projectManager: ProjectManager
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Main content
+            if let graphData = project.graphData, !graphData.nodes.isEmpty {
+                HSplitView {
+                    // Graph visualization
+                    GraphVisualizationView(graphData: graphData)
+                        .frame(minWidth: 400)
+                    
+                    // Analysis panel
+                    AnalysisPanelView(graphData: graphData, insights: projectManager.insights)
+                        .frame(minWidth: 300, maxWidth: 400)
+                }
+            } else {
+                // Empty state with better information
+                VStack(spacing: 20) {
+                    Image(systemName: "network")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    
+                    Text("Loading Knowledge Graph...")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    
+                    VStack(spacing: 8) {
+                        Text("Graph data is being initialized")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Configuration: \(project.depth.displayName) depth, \(project.sourcePreferences.count) source type(s)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 } 

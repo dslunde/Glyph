@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 
 /// Main ViewModel for managing projects and coordinating between UI and services
+@MainActor
 class ProjectManager: ObservableObject {
     @Published var projects: [Project] = []
     @Published var selectedProject: Project?
@@ -25,7 +26,6 @@ class ProjectManager: ObservableObject {
     init() {
         setupBindings()
         loadProjects()
-        createSampleProject()
     }
     
     private func setupBindings() {
@@ -47,8 +47,24 @@ class ProjectManager: ObservableObject {
     
     // MARK: - Project Management
     
-    func createProject(name: String, description: String = "") {
-        let newProject = Project(name: name, description: description, isOnline: isOnlineMode)
+    func createProject(name: String, description: String = "", topic: String = "",
+                      depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+                      filePaths: [String] = [], urls: [String] = [],
+                      hypotheses: String = "", controversialAspects: String = "",
+                      sensitivityLevel: SensitivityLevel = .medium) {
+        let newProject = Project(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: sourcePreferences,
+            filePaths: filePaths,
+            urls: urls,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel,
+            isOnline: isOnlineMode
+        )
         projects.append(newProject)
         selectedProject = newProject
         saveProjects()
@@ -144,50 +160,42 @@ class ProjectManager: ObservableObject {
     
     // MARK: - Sample Data Creation
     
-    private func createSampleProject() {
-        if projects.isEmpty {
-            let sampleProject = Project(
-                name: "Knowledge Discovery",
-                description: "Exploring connections between concepts and insights",
-                isOnline: true
-            )
-            projects.append(sampleProject)
-            selectedProject = sampleProject
-            
-            Task {
-                await initializeSampleGraph(for: sampleProject)
-            }
-        }
-    }
-    
     @MainActor
     private func initializeSampleGraph(for project: Project) async {
         var graphData = GraphData()
         
-        // Create sample nodes
+        // Create Spider-Man themed mock nodes (about 10 nodes) with positive coordinates
         let nodes = [
-            GraphNode(label: "Machine Learning", type: .concept, properties: ["domain": "AI"], position: CGPoint(x: 100, y: 100)),
-            GraphNode(label: "Neural Networks", type: .concept, properties: ["complexity": "high"], position: CGPoint(x: 200, y: 150)),
-            GraphNode(label: "Data Analysis", type: .concept, properties: ["domain": "Analytics"], position: CGPoint(x: 150, y: 200)),
-            GraphNode(label: "Python", type: .entity, properties: ["type": "language"], position: CGPoint(x: 250, y: 100)),
-            GraphNode(label: "Research Paper", type: .document, properties: ["source": "academic"], position: CGPoint(x: 300, y: 200)),
-            GraphNode(label: "Pattern Recognition", type: .insight, properties: ["importance": "high"], position: CGPoint(x: 175, y: 250))
+            GraphNode(label: "Spider-Man", type: .entity, properties: ["alias": "Peter Parker", "universe": "616"], position: CGPoint(x: 300, y: 200)),
+            GraphNode(label: "Spider Powers", type: .concept, properties: ["type": "superhuman abilities"], position: CGPoint(x: 150, y: 100)),
+            GraphNode(label: "Web-Slinging", type: .concept, properties: ["skill": "signature ability"], position: CGPoint(x: 100, y: 250)),
+            GraphNode(label: "Great Responsibility", type: .insight, properties: ["quote": "with great power"], position: CGPoint(x: 400, y: 50)),
+            GraphNode(label: "Daily Bugle", type: .entity, properties: ["type": "newspaper", "boss": "J. Jonah Jameson"], position: CGPoint(x: 500, y: 200)),
+            GraphNode(label: "Green Goblin", type: .entity, properties: ["real_name": "Norman Osborn", "relation": "arch-nemesis"], position: CGPoint(x: 450, y: 350)),
+            GraphNode(label: "Uncle Ben", type: .entity, properties: ["status": "deceased", "role": "mentor"], position: CGPoint(x: 200, y: 400)),
+            GraphNode(label: "Queens NYC", type: .entity, properties: ["type": "location", "home": "neighborhood"], position: CGPoint(x: 50, y: 150)),
+            GraphNode(label: "Spider Sense", type: .concept, properties: ["type": "precognitive ability"], position: CGPoint(x: 350, y: 50)),
+            GraphNode(label: "Amazing Fantasy #15", type: .document, properties: ["year": "1962", "significance": "first appearance"], position: CGPoint(x: 550, y: 100))
         ]
         
         graphData.nodes = nodes
         
-        // Create sample edges
-        if nodes.count >= 6 {
-            let edges = [
-                GraphEdge(sourceId: nodes[0].id, targetId: nodes[1].id, label: "uses", weight: 0.8),
-                GraphEdge(sourceId: nodes[1].id, targetId: nodes[3].id, label: "implemented_in", weight: 0.9),
-                GraphEdge(sourceId: nodes[0].id, targetId: nodes[2].id, label: "requires", weight: 0.7),
-                GraphEdge(sourceId: nodes[2].id, targetId: nodes[5].id, label: "leads_to", weight: 0.6),
-                GraphEdge(sourceId: nodes[4].id, targetId: nodes[0].id, label: "describes", weight: 0.8),
-                GraphEdge(sourceId: nodes[3].id, targetId: nodes[2].id, label: "enables", weight: 0.5)
-            ]
-            graphData.edges = edges
-        }
+        // Create edges connecting the Spider-Man concepts
+        let edges = [
+            GraphEdge(sourceId: nodes[0].id, targetId: nodes[1].id, label: "possesses", weight: 0.9),
+            GraphEdge(sourceId: nodes[1].id, targetId: nodes[2].id, label: "enables", weight: 0.8),
+            GraphEdge(sourceId: nodes[1].id, targetId: nodes[8].id, label: "includes", weight: 0.7),
+            GraphEdge(sourceId: nodes[0].id, targetId: nodes[3].id, label: "learns", weight: 1.0),
+            GraphEdge(sourceId: nodes[6].id, targetId: nodes[3].id, label: "teaches", weight: 0.9),
+            GraphEdge(sourceId: nodes[0].id, targetId: nodes[4].id, label: "works_for", weight: 0.6),
+            GraphEdge(sourceId: nodes[0].id, targetId: nodes[5].id, label: "fights", weight: 0.8),
+            GraphEdge(sourceId: nodes[0].id, targetId: nodes[7].id, label: "lives_in", weight: 0.7),
+            GraphEdge(sourceId: nodes[9].id, targetId: nodes[0].id, label: "introduces", weight: 1.0),
+            GraphEdge(sourceId: nodes[6].id, targetId: nodes[0].id, label: "mentors", weight: 0.9),
+            GraphEdge(sourceId: nodes[5].id, targetId: nodes[6].id, label: "causes_death", weight: 0.8),
+            GraphEdge(sourceId: nodes[4].id, targetId: nodes[0].id, label: "criticizes", weight: 0.5)
+        ]
+        graphData.edges = edges
         
         // Update metadata
         graphData.metadata.totalNodes = graphData.nodes.count
@@ -198,6 +206,13 @@ class ProjectManager: ObservableObject {
         // Update project
         if let index = projects.firstIndex(where: { $0.id == project.id }) {
             projects[index].graphData = graphData
+            projects[index].updateLastModified()
+            
+            // Update selected project if it's the one we just updated
+            if selectedProject?.id == project.id {
+                selectedProject = projects[index]
+            }
+            
             saveProjects()
         }
     }

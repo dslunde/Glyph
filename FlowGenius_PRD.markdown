@@ -21,14 +21,19 @@
 ### 2.2 Functional Requirements
 
 #### 2.2.1 User Interface
+- **Initial Login**
+  - Users need to login with locally stored credentials
+  - Logins should timeout after 1 hour of inactivity
 - **Sidebar**:
   - "New Project" button.
   - List of user-specific previous projects (filtered by authentication).
 - **New Project Flow**:
-  - Input fields: Topic, Depth (Quick, Moderate, Comprehensive), Source Preferences (Reliable, Insider, Outsider, Unreliable), Hypotheses, Controversial Aspects, Sensitivity Level (Low, High).
+  - Input fields: Topic, Depth (Quick, Moderate, Comprehensive), Source Preferences (Reliable, Insider, Outsider, Unreliable) and inputs for File/Folder paths and URLs (adjustable number), Hypotheses (optional), Controversial Aspects (optional), Sensitivity Level (Low, Medium, High).
   - Preview and customize outputs (Learning Plan, Knowledge Graph).
 - **Previous Project Flow**:
-  - Load and display saved project outputs.
+  - Load and display view with tabs for Learning Plan and Knowledge Graph.
+- **Learning Plan View**:
+  - Loads rich text editor with contents of Learning Plan
 - **Knowledge Graph View**:
   - Interactive SwiftUI canvas (zoom, drag, click nodes for details).
   - Edit graph (add/remove nodes, adjust edges).
