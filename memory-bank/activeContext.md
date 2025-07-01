@@ -35,8 +35,8 @@ The project has successfully completed its foundational setup phase and is now r
 ### 🎯 Recently Completed (This Session)
 
 #### ✅ PRD Sidebar and New Project Flow Implementation
-**Status**: COMPLETE
-**Achievement**: Full implementation of PRD-specified UI requirements
+**Status**: COMPLETE + UI REFINEMENTS
+**Achievement**: Full implementation of PRD-specified UI requirements with user feedback improvements
 **Key Components Delivered**:
 - Enhanced New Project Flow with all PRD fields (Topic, Depth, Source Preferences, Hypotheses, Controversial Aspects, Sensitivity Level)
 - Interactive Knowledge Graph canvas with zoom, pan, and drag functionality
@@ -44,6 +44,29 @@ The project has successfully completed its foundational setup phase and is now r
 - Enhanced sidebar with rich project information display
 - Real-time progress indicators for graph generation
 - Project information modal with complete configuration details
+
+**Latest UI Refinements** (This Session):
+- ✅ Reordered source preferences in specified layout (Reliable top-left, Unreliable top-right, Insider bottom-left, Outsider bottom-right)
+- ✅ Made entire source preference cards clickable (not just text)
+- ✅ Converted sensitivity level to compact dropdown menu
+- ✅ Updated sensitivity descriptions to reflect algorithm sensitivity for gaps/contradictions/rare perspectives
+- ✅ Fixed Create button validation logic (requires name + at least one source preference)
+- ✅ Added Spider-Man themed mock knowledge graph with 10 interconnected nodes for demo purposes
+
+**Additional UI Fixes** (Second Iteration):
+- ✅ Added Mac-native project deletion with right-click context menu and Delete key support
+- ✅ Fixed graph visibility issues by correcting node coordinates to all positive values
+- ✅ Disabled Analyze button with "Coming Soon" tooltip to prevent crashes
+- ✅ Improved graph Canvas coordinate system and rendering
+- ✅ Enhanced project updates to properly refresh UI when graph data is loaded
+
+**Debug Improvements** (Third Iteration):
+- ✅ Fixed tooltip for disabled Analyze button using overlay technique
+- ✅ Added real-time cursor position tracking with red dot indicator
+- ✅ Added comprehensive debug information display (cursor position, pan offset, first node position)
+- ✅ Implemented smart resetView() that centers graph automatically
+- ✅ Added onAppear to auto-center graph when view loads
+- ✅ Enhanced visibility debugging tools for troubleshooting graph rendering issues
 
 ### 🎯 Immediate Priorities (Next 2-3 Sessions)
 

@@ -39,11 +39,23 @@ struct GlyphApp: App {
                         ForEach(projectManager.projects) { project in
                             ProjectRowView(project: project)
                                 .tag(project)
+                                .contextMenu {
+                                    Button("Delete Project", role: .destructive) {
+                                        projectManager.deleteProject(project)
+                                    }
+                                }
                         }
                         .onDelete(perform: deleteProjects)
                     }
                     .listStyle(SidebarListStyle())
                     .navigationTitle("")
+                    .onKeyPress(.delete) {
+                        if let selectedProject = projectManager.selectedProject {
+                            projectManager.deleteProject(selectedProject)
+                            return .handled
+                        }
+                        return .ignored
+                    }
                     
                     Divider()
                     
@@ -317,57 +329,59 @@ struct CreateProjectView: View {
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                             
-                            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 2), spacing: 8) {
-                                ForEach(SourcePreference.allCases, id: \.self) { preference in
-                                    Button(action: {
-                                        if sourcePreferences.contains(preference) {
-                                            sourcePreferences.remove(preference)
-                                        } else {
-                                            sourcePreferences.insert(preference)
-                                        }
-                                    }) {
-                                        HStack {
-                                            Image(systemName: sourcePreferences.contains(preference) ? "checkmark.circle.fill" : "circle")
-                                                .foregroundColor(preference.color)
-                                            VStack(alignment: .leading) {
-                                                Text(preference.displayName)
-                                                    .font(.caption)
-                                                    .fontWeight(.medium)
-                                                Text(preference.description)
-                                                    .font(.caption2)
-                                                    .foregroundColor(.secondary)
-                                            }
-                                            Spacer()
-                                        }
-                                        .padding(8)
-                                        .background(
-                                            RoundedRectangle(cornerRadius: 8)
-                                                .fill(sourcePreferences.contains(preference) ? preference.color.opacity(0.1) : Color.clear)
-                                                .stroke(preference.color.opacity(0.3), lineWidth: 1)
-                                        )
+                            // Custom grid layout with specific order
+                            VStack(spacing: 8) {
+                                HStack(spacing: 8) {
+                                    // Top Left: Reliable
+                                    SourcePreferenceCard(
+                                        preference: .reliable,
+                                        isSelected: sourcePreferences.contains(.reliable)
+                                    ) {
+                                        toggleSourcePreference(.reliable)
                                     }
-                                    .buttonStyle(.plain)
+                                    
+                                    // Top Right: Unreliable
+                                    SourcePreferenceCard(
+                                        preference: .unreliable,
+                                        isSelected: sourcePreferences.contains(.unreliable)
+                                    ) {
+                                        toggleSourcePreference(.unreliable)
+                                    }
+                                }
+                                
+                                HStack(spacing: 8) {
+                                    // Bottom Left: Insider
+                                    SourcePreferenceCard(
+                                        preference: .insider,
+                                        isSelected: sourcePreferences.contains(.insider)
+                                    ) {
+                                        toggleSourcePreference(.insider)
+                                    }
+                                    
+                                    // Bottom Right: Outsider
+                                    SourcePreferenceCard(
+                                        preference: .outsider,
+                                        isSelected: sourcePreferences.contains(.outsider)
+                                    ) {
+                                        toggleSourcePreference(.outsider)
+                                    }
                                 }
                             }
                         }
                         
-                        VStack(alignment: .leading, spacing: 8) {
+                        HStack {
                             Text("Sensitivity Level")
                                 .font(.headline)
                             
+                            Spacer()
+                            
                             Picker("Sensitivity Level", selection: $sensitivityLevel) {
                                 ForEach(SensitivityLevel.allCases, id: \.self) { level in
-                                    VStack(alignment: .leading) {
-                                        Text(level.displayName)
-                                            .font(.subheadline)
-                                        Text(level.description)
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                    .tag(level)
+                                    Text(level.displayName).tag(level)
                                 }
                             }
-                            .pickerStyle(.segmented)
+                            .pickerStyle(.menu)
+                            .frame(width: 120)
                         }
                     }
                     
@@ -422,11 +436,61 @@ struct CreateProjectView: View {
                         )
                         dismiss()
                     }
-                    .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(!isFormValid)
                 }
             }
         }
         .frame(width: 600, height: 700)
+    }
+    
+    // MARK: - Helper Methods
+    
+    private var isFormValid: Bool {
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !sourcePreferences.isEmpty
+    }
+    
+    private func toggleSourcePreference(_ preference: SourcePreference) {
+        if sourcePreferences.contains(preference) {
+            sourcePreferences.remove(preference)
+        } else {
+            sourcePreferences.insert(preference)
+        }
+    }
+}
+
+// MARK: - Source Preference Card Component
+
+struct SourcePreferenceCard: View {
+    let preference: SourcePreference
+    let isSelected: Bool
+    let action: () -> Void
+    
+    var body: some View {
+        Button(action: action) {
+            HStack {
+                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(preference.color)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(preference.displayName)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                    Text(preference.description)
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                        .multilineTextAlignment(.leading)
+                }
+                Spacer()
+            }
+            .padding(8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? preference.color.opacity(0.1) : Color.clear)
+                    .stroke(preference.color.opacity(0.3), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -500,35 +564,23 @@ struct ProjectDetailView: View {
                 Spacer()
                 
                 VStack(spacing: 8) {
-                    // Analysis button
+                    // Analysis button (disabled for now)
                     Button(action: {
-                        Task {
-                            await projectManager.analyzeCurrentProject()
-                        }
+                        // Coming soon - do nothing for now
                     }) {
                         HStack {
-                            if projectManager.isAnalyzing {
-                                ProgressView()
-                                    .scaleEffect(0.8)
-                            } else {
-                                Image(systemName: "sparkles")
-                            }
-                            Text(projectManager.isAnalyzing ? "Analyzing..." : "Analyze")
+                            Image(systemName: "sparkles")
+                            Text("Analyze")
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(projectManager.isAnalyzing)
-                    
-                    // Progress indicator for graph generation
-                    if projectManager.isAnalyzing {
-                        VStack(spacing: 4) {
-                            ProgressView(value: projectManager.analysisProgress)
-                                .frame(width: 120)
-                            Text("\(Int(projectManager.analysisProgress * 100))%")
-                                .font(.caption2)
-                                .foregroundColor(.secondary)
-                        }
-                    }
+                    .disabled(true)
+                    .overlay(
+                        // Invisible overlay to capture hover for tooltip since disabled buttons don't show help
+                        Rectangle()
+                            .fill(Color.clear)
+                            .help("Coming Soon: Advanced analysis features")
+                    )
                 }
             }
             .padding()
@@ -550,36 +602,23 @@ struct ProjectDetailView: View {
             } else {
                 // Empty state with better information
                 VStack(spacing: 20) {
-                    if projectManager.isAnalyzing {
-                        ProgressView(value: projectManager.analysisProgress)
-                            .frame(width: 200)
-                        
-                        Text("Generating Knowledge Graph...")
-                            .font(.title2)
-                            .foregroundColor(.secondary)
-                        
-                        Text("Analyzing sources and extracting concepts")
+                    Image(systemName: "network")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    
+                    Text("Loading Knowledge Graph...")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    
+                    VStack(spacing: 8) {
+                        Text("Graph data is being initialized")
                             .font(.body)
                             .foregroundColor(.secondary)
-                    } else {
-                        Image(systemName: "network")
-                            .font(.system(size: 40))
-                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                         
-                        Text("Ready to Generate Graph")
-                            .font(.title2)
+                        Text("Configuration: \(project.depth.displayName) depth, \(project.sourcePreferences.count) source type(s)")
+                            .font(.caption)
                             .foregroundColor(.secondary)
-                        
-                        VStack(spacing: 8) {
-                            Text("Click 'Analyze' to start generating your knowledge graph")
-                                .font(.body)
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
-                            
-                            Text("Configuration: \(project.depth.displayName) depth, \(project.sourcePreferences.count) source type(s)")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -600,6 +639,7 @@ struct GraphVisualizationView: View {
     @State private var panOffset: CGSize = .zero
     @State private var draggedNode: GraphNode?
     @State private var showingNodeDetails = false
+    @State private var cursorPosition: CGPoint = .zero
     
     init(graphData: GraphData) {
         self._graphData = State(initialValue: graphData)
@@ -609,7 +649,7 @@ struct GraphVisualizationView: View {
         GeometryReader { geometry in
             ZStack {
                 // Background
-                Color(nsColor: .textBackgroundColor)
+                Color(nsColor: .controlBackgroundColor)
                     .onTapGesture {
                         selectedNode = nil
                         showingNodeDetails = false
@@ -619,8 +659,7 @@ struct GraphVisualizationView: View {
                 Canvas { context, size in
                     context.clipToLayer(opacity: 1) { context in
                         // Apply zoom and pan transformations
-                        context.translateBy(x: size.width/2 + panOffset.width, 
-                                          y: size.height/2 + panOffset.height)
+                        context.translateBy(x: panOffset.width, y: panOffset.height)
                         context.scaleBy(x: zoomScale, y: zoomScale)
                         
                         // Draw edges first (so they appear behind nodes)
@@ -628,6 +667,23 @@ struct GraphVisualizationView: View {
                         
                         // Draw nodes
                         drawNodes(context: context)
+                        
+                        // Draw cursor position indicator
+                        let cursorInGraph = CGPoint(
+                            x: (cursorPosition.x - panOffset.width) / zoomScale,
+                            y: (cursorPosition.y - panOffset.height) / zoomScale
+                        )
+                        
+                        let cursorRect = CGRect(x: cursorInGraph.x - 5, y: cursorInGraph.y - 5, width: 10, height: 10)
+                        context.fill(Path(ellipseIn: cursorRect), with: .color(.red))
+                    }
+                }
+                .onContinuousHover { phase in
+                    switch phase {
+                    case .active(let location):
+                        cursorPosition = location
+                    case .ended:
+                        break
                     }
                 }
                 .gesture(
@@ -699,7 +755,7 @@ struct GraphVisualizationView: View {
                         
                         Spacer()
                         
-                        // Graph info
+                        // Debug info
                         VStack(alignment: .trailing, spacing: 4) {
                             Text("\(graphData.nodes.count) nodes")
                                 .font(.caption)
@@ -710,6 +766,17 @@ struct GraphVisualizationView: View {
                             Text("Zoom: \(Int(zoomScale * 100))%")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
+                            Text("Cursor: (\(Int(cursorPosition.x)), \(Int(cursorPosition.y)))")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            Text("Pan: (\(Int(panOffset.width)), \(Int(panOffset.height)))")
+                                .font(.caption)
+                                .foregroundColor(.blue)
+                            if let firstNode = graphData.nodes.first {
+                                Text("First node: (\(Int(firstNode.position.x)), \(Int(firstNode.position.y)))")
+                                    .font(.caption)
+                                    .foregroundColor(.green)
+                            }
                         }
                         .padding()
                     }
@@ -723,6 +790,9 @@ struct GraphVisualizationView: View {
                 NodeDetailView(node: binding(for: node))
                     .environmentObject(GraphViewModel(graphData: $graphData))
             }
+        }
+        .onAppear {
+            resetView()
         }
     }
     
@@ -785,8 +855,8 @@ struct GraphVisualizationView: View {
     }
     
     private func nodeScreenPosition(node: GraphNode, canvasSize: CGSize) -> CGPoint {
-        let transformedX = (node.position.x * zoomScale) + canvasSize.width/2 + panOffset.width
-        let transformedY = (node.position.y * zoomScale) + canvasSize.height/2 + panOffset.height
+        let transformedX = (node.position.x * zoomScale) + panOffset.width
+        let transformedY = (node.position.y * zoomScale) + panOffset.height
         return CGPoint(x: transformedX, y: transformedY)
     }
     
@@ -800,7 +870,22 @@ struct GraphVisualizationView: View {
     
     private func resetView() {
         zoomScale = 1.0
-        panOffset = .zero
+        
+        // Center the view on the graph nodes
+        if !graphData.nodes.isEmpty {
+            let minX = graphData.nodes.map { $0.position.x }.min() ?? 0
+            let maxX = graphData.nodes.map { $0.position.x }.max() ?? 0
+            let minY = graphData.nodes.map { $0.position.y }.min() ?? 0
+            let maxY = graphData.nodes.map { $0.position.y }.max() ?? 0
+            
+            let centerX = (minX + maxX) / 2
+            let centerY = (minY + maxY) / 2
+            
+            // Offset to center the graph in the view (assuming 400x300 visible area)
+            panOffset = CGSize(width: 200 - centerX, height: 150 - centerY)
+        } else {
+            panOffset = .zero
+        }
     }
     
     private func binding(for node: GraphNode) -> Binding<GraphNode> {

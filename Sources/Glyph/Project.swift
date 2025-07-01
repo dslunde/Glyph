@@ -146,9 +146,9 @@ enum SensitivityLevel: String, CaseIterable, Codable {
     var description: String {
         switch self {
         case .low:
-            return "Standard analysis approach"
+            return "Standard sensitivity for finding gaps and contradictions"
         case .high:
-            return "Careful handling of sensitive topics"
+            return "High sensitivity for detecting rare perspectives and subtle insights"
         }
     }
 }
