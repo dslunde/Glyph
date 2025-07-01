@@ -12,6 +12,8 @@ class ProjectManager: ObservableObject {
     @Published var isAnalyzing = false
     @Published var analysisProgress: Double = 0.0
     @Published var insights: [String] = []
+    @Published var showingKnowledgeGraphProgress = false
+    @Published var knowledgeGraphSources: [[String: Any]] = []
     
     // Services
     let pythonService = PythonGraphService()
@@ -117,6 +119,46 @@ class ProjectManager: ObservableObject {
     
     func selectProject(_ project: Project) {
         selectedProject = project
+    }
+    
+    // MARK: - Knowledge Graph Generation
+    
+    /// Start knowledge graph generation from source collection results
+    func startKnowledgeGraphGeneration(from sources: [[String: Any]], for project: Project) {
+        knowledgeGraphSources = sources
+        selectedProject = project
+        showingKnowledgeGraphProgress = true
+    }
+    
+    /// Complete knowledge graph generation and update the project
+    func completeKnowledgeGraphGeneration(with graphData: GraphData) {
+        guard let project = selectedProject else { return }
+        
+        // Update the project with the generated graph data
+        if let index = projects.firstIndex(where: { $0.id == project.id }) {
+            projects[index].graphData = graphData
+            projects[index].updateLastModified()
+            
+            // Update selected project
+            selectedProject = projects[index]
+            
+            // Save changes
+            saveProjects()
+            
+            print("✅ Knowledge graph saved to project: \(graphData.nodes.count) nodes, \(graphData.edges.count) edges")
+            if let minimalSubgraph = graphData.minimalSubgraph {
+                print("   🎯 Minimal subgraph: \(minimalSubgraph.nodes.count) nodes, \(minimalSubgraph.edges.count) edges")
+            }
+        }
+        
+        // Hide the progress view
+        showingKnowledgeGraphProgress = false
+    }
+    
+    /// Cancel knowledge graph generation
+    func cancelKnowledgeGraphGeneration() {
+        showingKnowledgeGraphProgress = false
+        knowledgeGraphSources = []
     }
     
     // MARK: - Graph Analysis

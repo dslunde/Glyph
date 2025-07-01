@@ -58,8 +58,8 @@
   - Generate graph with nodes (concepts) and edges (relationships).
 - **Graph Analysis**:
   - **Core Concepts**: Degree Centrality (Swift custom or `networkx`), Betweenness (Brandes’ Algorithm), Eigenvector (Accelerate framework), PageRank (Metal kernel).
-  - **Knowledge Gaps**: Identify missing nodes/edges via Wikidata/ConceptNet comparison.
-  - **Counterintuitive Truths**: Highlight contradictions using sentiment/stance analysis.
+  - **Knowledge Gaps**: Identify missing nodes/edges link prediction, structural holes, and/or anomoly detection.
+  - **Counterintuitive Truths**: Highlight contradictions using sentiment/stance analysis, contradiction detection, and multi-hop inference.
   - **Uncommon Insights**: Cluster (k-means) for outlier concepts; prioritize low-frequency, high-relevance sources.
 - **Performance**:
   - Optimize for 1,000–1,000,000 nodes, max 10 GB RAM.

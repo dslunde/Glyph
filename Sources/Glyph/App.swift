@@ -169,6 +169,30 @@ struct ContentView: View {
                     CreateProjectView()
                         .environmentObject(projectManager)
                 }
+                .sheet(isPresented: $projectManager.showingKnowledgeGraphProgress) {
+                    if let project = projectManager.selectedProject {
+                        KnowledgeGraphProgressView(
+                            sources: projectManager.knowledgeGraphSources,
+                            topic: project.topic.isEmpty ? project.name : project.topic,
+                            onCompletion: { graphData in
+                                projectManager.completeKnowledgeGraphGeneration(with: graphData)
+                            },
+                            onCancel: {
+                                projectManager.cancelKnowledgeGraphGeneration()
+                            }
+                        )
+                    } else {
+                        VStack {
+                            Text("Error: No project selected")
+                                .font(.title2)
+                            Button("Cancel") {
+                                projectManager.cancelKnowledgeGraphGeneration()
+                            }
+                            .buttonStyle(.bordered)
+                        }
+                        .padding()
+                    }
+                }
                 .alert("Error", isPresented: $projectManager.showingError) {
                     Button("OK") { }
                 } message: {
@@ -1164,6 +1188,41 @@ struct SourceCollectionView: View {
             sensitivityLevel: projectConfig.sensitivityLevel,
             learningPlan: learningPlan
         )
+        
+        // Start knowledge graph generation if we have approved sources
+        if !approvedSources.isEmpty {
+            // Convert SearchResults to the format expected by knowledge graph generation
+            let sourcesForKG = approvedSources.map { searchResult in
+                [
+                    "title": searchResult.title,
+                    "content": "Research article by \(searchResult.author) from \(searchResult.date). Reliability score: \(searchResult.reliabilityScore)%",
+                    "url": searchResult.url,
+                    "score": Double(searchResult.reliabilityScore) / 100.0,
+                    "published_date": searchResult.date,
+                    "query": projectConfig.topic,
+                    "reliability_score": searchResult.reliabilityScore
+                ] as [String: Any]
+            }
+            
+            // Add manual sources to knowledge graph inputs
+            let manualSourcesForKG = validManualSources.map { manualSource in
+                [
+                    "title": manualSource.type == .file ? "File Source" : "URL Source",
+                    "content": "Manual source: \(manualSource.path)",
+                    "url": manualSource.path,
+                    "score": 0.8,
+                    "published_date": "",
+                    "query": projectConfig.topic,
+                    "reliability_score": 80
+                ] as [String: Any]
+            }
+            
+            let allSources = sourcesForKG + manualSourcesForKG
+            
+            if let createdProject = projectManager.selectedProject {
+                projectManager.startKnowledgeGraphGeneration(from: allSources, for: createdProject)
+            }
+        }
         
         dismiss()
     }
