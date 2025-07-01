@@ -326,28 +326,42 @@ class PythonGraphService: ObservableObject {
             throw APIError.networkError("Python not initialized")
         }
         
-        print("🔍 Starting Tavily search with \(queries.count) queries, limit: \(limit)")
+        print("🔍 Calling real Python API for Tavily search...")
         
-        if hasModule("tavily") && hasModule("requests") && hasModule("langsmith") {
-            print("📡 Real Tavily + LangSmith integration available but not yet implemented")
-            print("🔍 Would use LangSmith to trace Tavily API calls")
-            // TODO: Implement real Tavily integration with LangSmith tracing
-            // This would involve:
-            // 1. Using LangSmith to trace each Tavily API call
-            // 2. Logging query, response count, relevance scores
-            // 3. Tracking API usage and performance metrics
-        } else {
-            print("📡 Using mock Tavily search results (Tavily/LangSmith modules not available)")
+        do {
+            // Import our custom Python API module
+            let apiModule = try Python.attemptImport("PythonAPIService")
+            
+            // Convert Swift array to Python list
+            let pythonQueries = Python.list(queries)
+            
+            // Call the real Python function
+            let result = apiModule.search_with_tavily(pythonQueries, limit, apiKey)
+            
+            // Extract results from Python dict
+            let success = Bool(result["success"]) ?? false
+            let pythonResults = result["results"]
+            
+            if success {
+                // Convert Python results to Swift format
+                let swiftResults = convertPythonListToSwift(pythonResults)
+                print("✅ Successfully retrieved \(swiftResults.count) real search results")
+                return swiftResults
+                
+            } else {
+                let error = String(describing: result["error"])
+                print("⚠️ Tavily API call failed, using fallback results: \(error)")
+                
+                // Convert fallback results to Swift format
+                let fallbackResults = convertPythonListToSwift(pythonResults)
+                return fallbackResults
+            }
+            
+        } catch {
+            print("❌ Python API call failed: \(error)")
+            print("🔄 Falling back to mock search results")
+            return generateMockTavilyResults(queries: queries, limit: limit)
         }
-        
-        for (index, query) in queries.enumerated() {
-            print("   Query \(index + 1): \(query)")
-        }
-        
-        let results = generateMockTavilyResults(queries: queries, limit: limit)
-        print("✅ Generated \(results.count) search results")
-        
-        return results
     }
     
     private func generateMockTavilyResults(queries: [String], limit: Int) -> [[String: Any]] {
@@ -372,35 +386,43 @@ class PythonGraphService: ObservableObject {
             throw APIError.networkError("Python not initialized")
         }
         
-        if hasModule("openai") && hasModule("langsmith") {
-            print("🤖 Real OpenAI + LangSmith integration available but not yet implemented")
-            print("🔍 Would use LangSmith to trace OpenAI query generation calls")
-            // TODO: Implement real OpenAI integration with LangSmith tracing
-            // This would involve:
-            // 1. Setting up LangSmith environment in Python
-            // 2. Using @traceable decorator on OpenAI calls
-            // 3. Logging prompt, response, tokens, and timing
-        } else {
-            print("🤖 Using mock query generation (OpenAI/LangSmith modules not available)")
+        print("🤖 Calling real Python API for query generation...")
+        
+        do {
+            // Import our custom Python API module
+            let apiModule = try Python.attemptImport("PythonAPIService")
+            
+            // Call the real Python function
+            let result = apiModule.generate_search_queries(topic, apiKey)
+            
+            // Extract results from Python dict
+            let success = Bool(result["success"]) ?? false
+            let queries = Array(result["queries"])
+            
+            if success {
+                let queryStrings = queries.map { String(describing: $0) }
+                print("✅ Successfully generated \(queryStrings.count) real search queries")
+                return queryStrings
+            } else {
+                let error = String(describing: result["error"])
+                print("⚠️ API call failed, using fallback queries: \(error)")
+                let fallbackQueries = queries.map { String(describing: $0) }
+                return fallbackQueries
+            }
+            
+        } catch {
+            print("❌ Python API call failed: \(error)")
+            print("🔄 Falling back to mock query generation")
+            
+            // Fallback to simple mock queries
+            return [
+                "\(topic) fundamentals and basic concepts",
+                "\(topic) latest research and developments 2024", 
+                "\(topic) expert opinions and analysis",
+                "\(topic) practical applications and case studies",
+                "\(topic) controversies and different perspectives"
+            ]
         }
-        
-        print("📝 Generating search queries for topic: '\(topic)'")
-        
-        // Generate intelligent queries based on topic
-        let queries = [
-            "\(topic) fundamentals and basic concepts",
-            "\(topic) latest research and developments 2024", 
-            "\(topic) expert opinions and analysis",
-            "\(topic) practical applications and case studies",
-            "\(topic) controversies and different perspectives"
-        ]
-        
-        print("✅ Generated \(queries.count) search queries")
-        for (index, query) in queries.enumerated() {
-            print("   \(index + 1). \(query)")
-        }
-        
-        return queries
     }
     
     func scoreReliability(results: [[String: Any]], sourcePreferences: [String], apiKey: String) async throws -> [[String: Any]] {
@@ -408,47 +430,135 @@ class PythonGraphService: ObservableObject {
             throw APIError.networkError("Python not initialized")
         }
         
-        print("🎯 Starting reliability scoring for \(results.count) results")
-        print("   Source preferences: \(sourcePreferences)")
+        print("🎯 Calling real Python API for reliability scoring...")
         
-        if hasModule("openai") && hasModule("langsmith") {
-            print("🤖 Real OpenAI + LangSmith integration available for reliability scoring")
-            print("🔍 Would use LangSmith to trace reliability scoring LLM calls")
-            // TODO: Implement real LLM reliability scoring with LangSmith tracing
-            // This would involve:
-            // 1. Using OpenAI to analyze content quality and source reliability
-            // 2. LangSmith tracing of prompt, response, and scoring logic
-            // 3. Advanced reliability metrics beyond domain-based scoring
-        } else {
-            print("🎯 Using mock reliability scoring (OpenAI/LangSmith modules not available)")
-        }
-        
-        let scoredResults = results.map { result in
-            var scored = result
+        do {
+            // Import our custom Python API module
+            let apiModule = try Python.attemptImport("PythonAPIService")
             
-            // Simple reliability scoring based on URL domain
-            let url = result["url"] as? String ?? ""
-            let urlLower = url.lowercased()
-            let title = result["title"] as? String ?? "Unknown"
+            // Convert Swift data to Python format
+            let pythonResults = convertSwiftToPython(results)
+            let pythonPreferences = Python.list(sourcePreferences)
             
-            var score = 50
-            if urlLower.contains("edu") || urlLower.contains("gov") {
-                score = Int.random(in: 75...90)
-            } else if urlLower.contains("org") {
-                score = Int.random(in: 60...80)
-            } else if urlLower.contains("com") || urlLower.contains("net") {
-                score = Int.random(in: 40...70)
+            // Call the real Python function
+            let result = apiModule.score_reliability(pythonResults, pythonPreferences, apiKey)
+            
+            // Extract results from Python dict
+            let success = Bool(result["success"]) ?? false
+            let pythonScoredResults = result["results"]
+            
+            if success {
+                // Convert Python results back to Swift format
+                let swiftResults = convertPythonListToSwift(pythonScoredResults)
+                let avgScore = swiftResults.compactMap { $0["reliabilityScore"] as? Int }.reduce(0, +) / max(1, swiftResults.count)
+                print("✅ Successfully scored \(swiftResults.count) results - Average: \(avgScore)%")
+                return swiftResults
+                
+            } else {
+                let error = String(describing: result["error"])
+                print("⚠️ Reliability scoring failed, using fallback scoring: \(error)")
+                
+                // Convert fallback results to Swift format
+                let fallbackResults = convertPythonListToSwift(pythonScoredResults)
+                return fallbackResults
             }
             
-            scored["reliabilityScore"] = score
-            print("   📊 '\(title)' → \(score)% reliability")
-            return scored
+        } catch {
+            print("❌ Python API call failed: \(error)")
+            print("🔄 Falling back to mock reliability scoring")
+            
+            // Fallback to simple domain-based scoring
+            return results.map { result in
+                var scored = result
+                let url = result["url"] as? String ?? ""
+                let urlLower = url.lowercased()
+                
+                var score = 50
+                if urlLower.contains("edu") || urlLower.contains("gov") {
+                    score = Int.random(in: 75...90)
+                } else if urlLower.contains("org") {
+                    score = Int.random(in: 60...80)
+                } else if urlLower.contains("com") || urlLower.contains("net") {
+                    score = Int.random(in: 40...70)
+                }
+                
+                scored["reliabilityScore"] = score
+                return scored
+            }
+        }
+    }
+    
+    // MARK: - Helper Functions for Python/Swift Conversion
+    
+    private func convertPythonToSwift(_ value: PythonObject) -> Any {
+        // Convert Python objects to appropriate Swift types
+        let stringValue = String(describing: value)
+        
+        // Try to parse as different types
+        if let int = Int(stringValue) {
+            return int
+        } else if let double = Double(stringValue) {
+            return double
+        } else if stringValue.lowercased() == "true" {
+            return true
+        } else if stringValue.lowercased() == "false" {
+            return false
+        } else {
+            return stringValue
+        }
+    }
+    
+    private func convertPythonListToSwift(_ pythonList: PythonObject) -> [[String: Any]] {
+        var swiftResults: [[String: Any]] = []
+        
+        // Iterate through Python list
+        let listArray = Array(pythonList)
+        for pythonDict in listArray {
+            var swiftDict: [String: Any] = [:]
+            
+            // Get keys from Python dict
+            let keysObject = Python.list(pythonDict.keys())
+            let keys = Array(keysObject)
+            
+            for key in keys {
+                let keyString = String(describing: key)
+                let value = pythonDict[key]
+                swiftDict[keyString] = convertPythonToSwift(value)
+            }
+            
+            swiftResults.append(swiftDict)
         }
         
-        let averageScore = scoredResults.compactMap { $0["reliabilityScore"] as? Int }.reduce(0, +) / max(1, scoredResults.count)
-        print("✅ Completed reliability scoring - Average: \(averageScore)%")
+        return swiftResults
+    }
+    
+    private func convertSwiftToPython(_ array: [[String: Any]]) -> PythonObject {
+        let pythonList = Python.list()
         
-        return scoredResults
+        for dict in array {
+            let pythonDict = Python.dict()
+            for (key, value) in dict {
+                pythonDict[key] = convertSwiftValueToPython(value)
+            }
+            pythonList.append(pythonDict)
+        }
+        
+        return pythonList
+    }
+    
+    private func convertSwiftValueToPython(_ value: Any) -> PythonObject {
+        switch value {
+        case let string as String:
+            return Python.str(string)
+        case let int as Int:
+            return Python.int(int)
+        case let double as Double:
+            return Python.float(double)
+        case let bool as Bool:
+            return Python.bool(bool)
+        default:
+            return Python.str(String(describing: value))
+        }
     }
     
     // MARK: - Package Installation Support
