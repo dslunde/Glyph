@@ -44,7 +44,7 @@ except ImportError:
 
 # LangSmith tracing
 try:
-    from langsmith import traceable
+    from langsmith import traceable  # type: ignore[assignment]
     LANGSMITH_AVAILABLE = True
     print("✅ LangSmith tracing available")
 except ImportError:
@@ -54,7 +54,7 @@ except ImportError:
     
     F = TypeVar('F', bound=Callable[..., Any])
     
-    def traceable(name: Optional[str] = None) -> Callable[[F], F]:
+    def traceable(name: Optional[str] = None):  # type: ignore[misc]
         """Fallback traceable decorator when LangSmith is not available.
         
         Args:
@@ -589,15 +589,37 @@ def error_handler_node(state: SourceCollectionState) -> SourceCollectionState:
 # MARK: - Workflow Routing Logic
 
 def should_continue(state: SourceCollectionState) -> str:
-    """Determine the next step in the workflow"""
-    current_step = state["current_step"]
-    error_count = state["error_count"]
+    """Determine the next step in the LangGraph workflow based on current state.
     
-    # Check for too many errors
+    This function implements the routing logic for the source collection workflow.
+    It examines the current step and error count to decide whether to proceed to
+    the next step, handle errors, or terminate the workflow.
+    
+    Args:
+        state: Current workflow state containing step information and data.
+        
+    Returns:
+        String indicating the next workflow node to execute:
+        - "generate_queries": Move to query generation
+        - "search_sources": Move to source search
+        - "score_reliability": Move to reliability scoring
+        - "filter_results": Move to result filtering
+        - "finalize": Move to result finalization
+        - "error_handler": Move to error handling
+        - END: Terminate the workflow
+        
+    Note:
+        This function implements fail-fast behavior by routing to error_handler
+        when too many errors occur (>10) or when expected data is missing.
+    """
+    current_step: str = state["current_step"]
+    error_count: int = state["error_count"]
+    
+    # Check for too many errors - fail-fast behavior
     if error_count > 10:
         return "error_handler"
     
-    # Normal flow progression
+    # Normal workflow progression with validation
     if current_step == "initialize":
         return "generate_queries"
     elif current_step == "generate_queries":
@@ -628,7 +650,24 @@ def should_continue(state: SourceCollectionState) -> str:
 # MARK: - Helper Functions
 
 def generate_domain_score(url: str) -> int:
-    """Generate reliability score based on domain"""
+    """Generate reliability score based on domain authority.
+    
+    This function analyzes the URL's domain to assign a reliability score based on
+    common domain authority patterns. Academic and government domains receive higher
+    scores, while commercial domains receive more variable scores.
+    
+    Args:
+        url: The URL to analyze for domain authority.
+        
+    Returns:
+        Reliability score between 0-100, where higher scores indicate more reliable domains.
+        
+    Examples:
+        >>> generate_domain_score("https://stanford.edu/research")
+        85  # Academic domain gets high score
+        >>> generate_domain_score("https://example.com/blog")
+        55  # Commercial domain gets moderate score
+    """
     import random
     url_lower = url.lower()
     
@@ -645,10 +684,33 @@ def generate_domain_score(url: str) -> int:
 
 
 def generate_fallback_search_results(queries: List[str], limit: int) -> List[Dict[str, Any]]:
-    """Generate fallback search results when Tavily fails"""
-    results = []
+    """Generate fallback search results when Tavily API is unavailable.
+    
+    This function creates mock search results that maintain the expected data structure
+    when the real Tavily API is unavailable. This ensures the workflow can continue
+    with sample data for testing and demo purposes.
+    
+    Args:
+        queries: List of search queries to generate results for.
+        limit: Maximum number of results to generate across all queries.
+        
+    Returns:
+        List of dictionaries containing mock search results with required fields:
+        - title: Article title
+        - url: Mock URL
+        - content: Sample content
+        - score: Simulated relevance score
+        - published_date: Mock publication date
+        - query: Original search query
+        - reliability_score: Initially None, to be filled by scoring step
+        
+    Note:
+        This is a fallback function used when real API calls fail. The generated
+        data follows the same structure as real Tavily results.
+    """
+    results: List[Dict[str, Any]] = []
     for i, query in enumerate(queries[:limit]):
-        result = {
+        result: Dict[str, Any] = {
             "title": f"Research on {query}",
             "url": f"https://example.com/article{i + 1}",
             "content": f"Comprehensive analysis of {query} with detailed findings.",
@@ -664,14 +726,30 @@ def generate_fallback_search_results(queries: List[str], limit: int) -> List[Dic
 # MARK: - Workflow Definition
 
 def create_source_collection_workflow() -> StateGraph:
-    """Create the LangGraph workflow for source collection"""
+    """Create and configure the LangGraph workflow for source collection.
+    
+    This function constructs a complete state machine workflow for orchestrating
+    the source collection process. The workflow includes initialization, query
+    generation, source search, reliability scoring, result filtering, and
+    comprehensive error handling.
+    
+    Returns:
+        Configured StateGraph workflow ready for compilation and execution.
+        
+    Raises:
+        ImportError: If LangGraph is not available.
+        
+    Note:
+        The workflow supports automatic error recovery and branching logic based
+        on intermediate results. Each node can route to error_handler if needed.
+    """
     if not LANGGRAPH_AVAILABLE:
         raise ImportError("LangGraph is required but not available")
     
     # Create the workflow graph
-    workflow = StateGraph(SourceCollectionState)
+    workflow: StateGraph = StateGraph(SourceCollectionState)
     
-    # Add nodes
+    # Add workflow nodes
     workflow.add_node("initialize", initialize_node)
     workflow.add_node("generate_queries", generate_queries_node)
     workflow.add_node("search_sources", search_sources_node)
@@ -680,10 +758,10 @@ def create_source_collection_workflow() -> StateGraph:
     workflow.add_node("finalize", finalize_node)
     workflow.add_node("error_handler", error_handler_node)
     
-    # Set entry point
+    # Set workflow entry point
     workflow.set_entry_point("initialize")
     
-    # Add conditional edges
+    # Add conditional routing edges with error handling
     workflow.add_conditional_edges(
         "initialize",
         should_continue,
@@ -846,8 +924,32 @@ async def run_source_collection_workflow(
 
 # MARK: - Testing and Development
 
-def test_workflow():
-    """Test the workflow with sample data"""
+def test_workflow() -> None:
+    """Test the LangGraph workflow with sample data and real API keys.
+    
+    This function provides a comprehensive test of the source collection workflow
+    using real API keys from environment variables. It tests the complete pipeline
+    from query generation through result filtering and provides detailed output
+    about the workflow execution.
+    
+    Environment Variables Required:
+        OPENAI_API_KEY: Valid OpenAI API key for LLM operations
+        TAVILY_API_KEY: Valid Tavily API key for web search
+        
+    Test Parameters:
+        - Topic: "artificial intelligence"
+        - Search limit: 3 results
+        - Reliability threshold: 60%
+        - Source preferences: ["reliable"]
+        
+    Output:
+        Prints detailed test results including success status, result count,
+        error count, and sample result information.
+        
+    Note:
+        This function will gracefully handle missing API keys by using fallback
+        data, but real API keys are recommended for comprehensive testing.
+    """
     print("🧪 Testing LangGraph Source Collection Workflow")
     print("=" * 50)
     
@@ -855,18 +957,19 @@ def test_workflow():
         print("❌ LangGraph not available - cannot run workflow")
         return
     
-    # Load environment
+    # Load environment variables
     from dotenv import load_dotenv
     load_dotenv()
     
-    openai_key = os.getenv('OPENAI_API_KEY', '')
-    tavily_key = os.getenv('TAVILY_API_KEY', '')
+    openai_key: str = os.getenv('OPENAI_API_KEY', '')
+    tavily_key: str = os.getenv('TAVILY_API_KEY', '')
     
     print(f"OpenAI key: {'✅' if openai_key else '❌'}")
     print(f"Tavily key: {'✅' if tavily_key else '❌'}")
     
-    async def run_test():
-        result = await run_source_collection_workflow(
+    async def run_test() -> None:
+        """Execute the workflow test asynchronously."""
+        result: Dict[str, Any] = await run_source_collection_workflow(
             topic="artificial intelligence",
             search_limit=3,
             reliability_threshold=60.0,
@@ -882,11 +985,11 @@ def test_workflow():
         
         if result['results']:
             print(f"\n📊 Sample result:")
-            sample = result['results'][0]
+            sample: Dict[str, Any] = result['results'][0]
             print(f"   Title: {sample.get('title', '')[:50]}...")
             print(f"   Reliability: {sample.get('reliability_score', 'N/A')}%")
     
-    # Run the test
+    # Execute the async test
     asyncio.run(run_test())
 
 

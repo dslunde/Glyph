@@ -19,7 +19,7 @@ import sys
 import json
 import time
 import asyncio
-from typing import List, Dict, Any, Optional, Union
+from typing import List, Dict, Any, Optional, Union, TypeVar, Callable, cast
 from datetime import datetime
 
 # Set up environment for .env file loading
@@ -35,13 +35,25 @@ except ImportError:
 
 # LangSmith tracing
 try:
-    from langsmith import traceable
+    from langsmith import traceable  # type: ignore[assignment]
     LANGSMITH_AVAILABLE = True
     print("✅ LangSmith tracing available")
 except ImportError:
     print("⚠️ LangSmith not available - operations will not be traced")
     LANGSMITH_AVAILABLE = False
-    def traceable(name: Optional[str] = None):  # type: ignore
+    
+    # Proper fallback type definitions
+    F = TypeVar('F', bound=Callable[..., Any])
+    
+    def traceable(name: Optional[str] = None):  # type: ignore[misc]
+        """Fallback traceable decorator when LangSmith is not available.
+        
+        Args:
+            name: Optional name for the traced function (ignored in fallback).
+            
+        Returns:
+            Decorator function that returns the original function unchanged.
+        """
         def decorator(func):
             return func
         return decorator
@@ -170,7 +182,7 @@ The queries should be:
 
 Cover these areas:
 1. Fundamental concepts and definitions
-2. Recent developments and research (2024)
+2. Recent developments and research (2025)
 3. Expert opinions and analysis
 4. Practical applications and case studies
 5. Controversies and different perspectives
@@ -489,8 +501,13 @@ def generate_domain_score(url: str) -> int:
 
 
 # Test function for direct Python testing
-def test_api_integration():
-    """Test function to verify API integration"""
+def test_api_integration() -> None:
+    """Test function to verify API integration.
+    
+    This function tests the integration with OpenAI and Tavily APIs by running
+    the complete pipeline: query generation -> search -> reliability scoring.
+    All operations use proper type checking and error handling.
+    """
     print("🧪 Testing API Integration")
     print("=" * 40)
     
@@ -508,19 +525,43 @@ def test_api_integration():
     print("\n🤖 Testing query generation...")
     query_result = generate_search_queries("machine learning", openai_key or "")
     print(f"Success: {query_result['success']}")
-    print(f"Queries: {len(query_result['queries'])}")
     
-    # Test search
-    print("\n🔍 Testing search...")
-    search_result = search_with_tavily(query_result['queries'][:2], 3, tavily_key or "")
-    print(f"Success: {search_result['success']}")
-    print(f"Results: {len(search_result['results'])}")
-    
-    # Test scoring
-    print("\n🎯 Testing reliability scoring...")
-    score_result = score_reliability(search_result['results'], ["reliable"], openai_key or "")
-    print(f"Success: {score_result['success']}")
-    print(f"Scored: {len(score_result['results'])}")
+    # Type-safe access to queries
+    queries = query_result.get('queries', [])
+    if isinstance(queries, list):
+        print(f"Queries: {len(queries)}")
+        
+        # Test search only if we have valid queries
+        if queries:
+            print("\n🔍 Testing search...")
+            search_result = search_with_tavily(queries[:2], 3, tavily_key or "")
+            print(f"Success: {search_result['success']}")
+            
+            # Type-safe access to results
+            results = search_result.get('results', [])
+            if isinstance(results, list):
+                print(f"Results: {len(results)}")
+                
+                # Test scoring only if we have valid results
+                if results:
+                    print("\n🎯 Testing reliability scoring...")
+                    score_result = score_reliability(results, ["reliable"], openai_key or "")
+                    print(f"Success: {score_result['success']}")
+                    
+                    # Type-safe access to scored results
+                    scored = score_result.get('results', [])
+                    if isinstance(scored, list):
+                        print(f"Scored: {len(scored)}")
+                    else:
+                        print("Scored: Error occurred")
+                else:
+                    print("No results to score")
+            else:
+                print("Results: Error occurred")
+        else:
+            print("No queries generated for testing")
+    else:
+        print("Queries: Error occurred")
     
     print("\n✅ API integration test complete!")
 
@@ -532,10 +573,10 @@ def run_source_collection_workflow_sync(
     topic: str,
     search_limit: int = 5,
     reliability_threshold: float = 60.0,
-    source_preferences: List[str] = None,
+    source_preferences: Optional[List[str]] = None,
     openai_api_key: str = "",
     tavily_api_key: str = ""
-) -> Dict[str, Union[List[Dict[str, Any]], str, bool]]:
+) -> Dict[str, Any]:
     """
     Synchronous wrapper for the LangGraph source collection workflow
     
@@ -616,7 +657,7 @@ def run_sequential_fallback(
     source_preferences: List[str],
     openai_api_key: str,
     tavily_api_key: str
-) -> Dict[str, Union[List[Dict[str, Any]], str, bool]]:
+) -> Dict[str, Any]:
     """
     Fallback to original sequential processing when LangGraph fails
     """
@@ -633,7 +674,16 @@ def run_sequential_fallback(
                 "metadata": {"error_count": 1, "fallback_used": True}
             }
         
-        queries = query_result["queries"]
+        # Type-safe access to queries
+        queries = query_result.get("queries", [])
+        if not isinstance(queries, list):
+            return {
+                "success": False,
+                "results": [],
+                "error_message": "Invalid queries format",
+                "metadata": {"error_count": 1, "fallback_used": True}
+            }
+        
         print(f"   Generated {len(queries)} queries")
         
         # Step 2: Search with Tavily
@@ -646,7 +696,16 @@ def run_sequential_fallback(
                 "metadata": {"error_count": 1, "fallback_used": True}
             }
         
-        raw_results = search_result["results"]
+        # Type-safe access to search results
+        raw_results = search_result.get("results", [])
+        if not isinstance(raw_results, list):
+            return {
+                "success": False,
+                "results": [],
+                "error_message": "Invalid search results format",
+                "metadata": {"error_count": 1, "fallback_used": True}
+            }
+        
         print(f"   Found {len(raw_results)} raw results")
         
         # Step 3: Score reliability
@@ -659,21 +718,31 @@ def run_sequential_fallback(
                 "metadata": {"error_count": 1, "fallback_used": True}
             }
         
-        scored_results = score_result["results"]
+        # Type-safe access to scored results
+        scored_results = score_result.get("results", [])
+        if not isinstance(scored_results, list):
+            return {
+                "success": False,
+                "results": [],
+                "error_message": "Invalid scored results format",
+                "metadata": {"error_count": 1, "fallback_used": True}
+            }
+        
         print(f"   Scored {len(scored_results)} results")
         
         # Step 4: Apply filtering logic (simplified)
         filtered_results = []
         for result in scored_results:
-            score = result.get("reliabilityScore", 50)
-            
-            # Simple filtering based on preferences
-            if "reliable" in source_preferences and score >= 60:
-                filtered_results.append(result)
-            elif "unreliable" in source_preferences and score <= 40:
-                filtered_results.append(result)
-            elif score >= 60 or score <= 40:  # Accept both extremes if mixed preferences
-                filtered_results.append(result)
+            if isinstance(result, dict):
+                score = result.get("reliabilityScore", 50)
+                if isinstance(score, (int, float)):
+                    # Simple filtering based on preferences
+                    if "reliable" in source_preferences and score >= 60:
+                        filtered_results.append(result)
+                    elif "unreliable" in source_preferences and score <= 40:
+                        filtered_results.append(result)
+                    elif score >= 60 or score <= 40:  # Accept both extremes if mixed preferences
+                        filtered_results.append(result)
         
         print(f"   Filtered to {len(filtered_results)} final results")
         
