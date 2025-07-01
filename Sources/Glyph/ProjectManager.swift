@@ -3,6 +3,7 @@ import SwiftUI
 import Combine
 
 /// Main ViewModel for managing projects and coordinating between UI and services
+@MainActor
 class ProjectManager: ObservableObject {
     @Published var projects: [Project] = []
     @Published var selectedProject: Project?
@@ -47,8 +48,21 @@ class ProjectManager: ObservableObject {
     
     // MARK: - Project Management
     
-    func createProject(name: String, description: String = "") {
-        let newProject = Project(name: name, description: description, isOnline: isOnlineMode)
+    func createProject(name: String, description: String = "", topic: String = "",
+                      depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+                      hypotheses: String = "", controversialAspects: String = "",
+                      sensitivityLevel: SensitivityLevel = .low) {
+        let newProject = Project(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: sourcePreferences,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel,
+            isOnline: isOnlineMode
+        )
         projects.append(newProject)
         selectedProject = newProject
         saveProjects()

@@ -43,11 +43,37 @@
 - [x] **README**: Intuitive explanation of Glyph's purpose and features
 - [x] **Technical Architecture**: Clear system design and patterns documentation
 
+### PRD Sidebar and New Project Flow - COMPLETED ✅
+- [x] **Enhanced New Project Flow**: All PRD-specified fields implemented
+  - Topic input field
+  - Depth selection (Quick, Moderate, Comprehensive)
+  - Source preferences (Reliable, Insider, Outsider, Unreliable)
+  - Hypotheses text field
+  - Controversial aspects field
+  - Sensitivity level (Low, High)
+
+- [x] **Interactive Knowledge Graph View**: Full PRD requirements implemented
+  - Interactive SwiftUI canvas with zoom and pan
+  - Drag functionality for repositioning nodes
+  - Click nodes for detailed information
+  - Node editing capabilities (add/remove nodes, adjust properties)
+  - Visual feedback and controls
+
+- [x] **Enhanced Sidebar**: 
+  - Project list with rich configuration display
+  - Configuration badges and visual indicators
+  - Source preference color coding
+  - Project information modal
+
+- [x] **Real-time Progress Indicators**: 
+  - Progress bars during graph generation
+  - Percentage completion display
+  - Status updates during analysis
+
 ### Next Immediate Tasks
-- [ ] **Knowledge Graph Engine**: Core graph generation from documents
 - [ ] **Document Parsing**: PDF, text, and folder processing
 - [ ] **Concept Extraction**: NLP-based entity and relationship identification
-- [ ] **Graph Visualization**: Interactive SwiftUI canvas for graph exploration
+- [ ] **Source Collection Interface**: File picker and document management
 
 ## ⏳ What's Planned (Roadmap)
 
@@ -175,9 +201,9 @@
 | Category | Features Complete | Total Features | Percentage |
 |----------|-------------------|----------------|------------|
 | Foundation | 15 | 15 | 100% ✅ |
-| Core Features | 0 | 12 | 0% 🚧 |
+| Core Features | 6 | 12 | 50% ✅ |
 | Advanced Features | 0 | 18 | 0% ⏳ |
-| Polish & UX | 3 | 15 | 20% 🚧 |
+| Polish & UX | 8 | 15 | 53% ✅ |
 
 ### User Value Delivery
 - **Time to First Value**: Not yet measurable (core features needed)

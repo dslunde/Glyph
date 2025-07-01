@@ -8,14 +8,29 @@ struct Project: Identifiable, Codable, Hashable {
     let id = UUID()
     var name: String
     var description: String
+    var topic: String
+    var depth: ProjectDepth
+    var sourcePreferences: [SourcePreference]
+    var hypotheses: String
+    var controversialAspects: String
+    var sensitivityLevel: SensitivityLevel
     var createdAt: Date
     var lastModified: Date
     var isOnline: Bool
     var graphData: GraphData?
     
-    init(name: String, description: String = "", isOnline: Bool = true) {
+    init(name: String, description: String = "", topic: String = "", 
+         depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+         hypotheses: String = "", controversialAspects: String = "", 
+         sensitivityLevel: SensitivityLevel = .low, isOnline: Bool = true) {
         self.name = name
         self.description = description
+        self.topic = topic
+        self.depth = depth
+        self.sourcePreferences = sourcePreferences
+        self.hypotheses = hypotheses
+        self.controversialAspects = controversialAspects
+        self.sensitivityLevel = sensitivityLevel
         self.createdAt = Date()
         self.lastModified = Date()
         self.isOnline = isOnline
@@ -33,6 +48,108 @@ struct Project: Identifiable, Codable, Hashable {
     
     static func == (lhs: Project, rhs: Project) -> Bool {
         lhs.id == rhs.id
+    }
+}
+
+// MARK: - Project Configuration Enums
+
+/// Project depth level as specified in PRD
+enum ProjectDepth: String, CaseIterable, Codable {
+    case quick = "quick"
+    case moderate = "moderate"
+    case comprehensive = "comprehensive"
+    
+    var displayName: String {
+        switch self {
+        case .quick:
+            return "Quick"
+        case .moderate:
+            return "Moderate"
+        case .comprehensive:
+            return "Comprehensive"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .quick:
+            return "Surface-level overview with key concepts"
+        case .moderate:
+            return "Balanced depth with detailed connections"
+        case .comprehensive:
+            return "Deep analysis with extensive relationships"
+        }
+    }
+}
+
+/// Source preference types from PRD
+enum SourcePreference: String, CaseIterable, Codable {
+    case reliable = "reliable"
+    case insider = "insider"
+    case outsider = "outsider"
+    case unreliable = "unreliable"
+    
+    var displayName: String {
+        switch self {
+        case .reliable:
+            return "Reliable"
+        case .insider:
+            return "Insider"
+        case .outsider:
+            return "Outsider"
+        case .unreliable:
+            return "Unreliable"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .reliable:
+            return "Established, peer-reviewed sources"
+        case .insider:
+            return "Industry or domain expert perspectives"
+        case .outsider:
+            return "External or alternative viewpoints"
+        case .unreliable:
+            return "Unverified or controversial sources"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .reliable:
+            return .green
+        case .insider:
+            return .blue
+        case .outsider:
+            return .orange
+        case .unreliable:
+            return .red
+        }
+    }
+}
+
+/// Sensitivity level for controversial topics
+enum SensitivityLevel: String, CaseIterable, Codable {
+    case low = "low"
+    case high = "high"
+    
+    var displayName: String {
+        switch self {
+        case .low:
+            return "Low"
+        case .high:
+            return "High"
+        }
+    }
+    
+    var description: String {
+        switch self {
+        case .low:
+            return "Standard analysis approach"
+        case .high:
+            return "Careful handling of sensitive topics"
+        }
     }
 }
 
