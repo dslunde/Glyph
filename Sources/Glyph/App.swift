@@ -282,7 +282,7 @@ struct CreateProjectView: View {
     @State private var urls: [String] = [""]
     @State private var hypotheses = ""
     @State private var controversialAspects = ""
-    @State private var sensitivityLevel: SensitivityLevel = .low
+    @State private var sensitivityLevel: SensitivityLevel = .medium
     
     var body: some View {
         VStack(spacing: 0) {
@@ -572,10 +572,24 @@ struct CreateProjectView: View {
     // MARK: - Helper Methods
     
     private var isFormValid: Bool {
-        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !sourcePreferences.isEmpty &&
-        (filePaths.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ||
-         urls.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
+        let nameValid = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let sourcePrefsValid = !sourcePreferences.isEmpty
+        
+        // File paths validation: if multiple fields exist, all should be filled
+        let filePathsValid: Bool = {
+            let nonEmptyPaths = filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            // Either all empty (valid) or if any are filled, count should match total fields when > 1
+            return filePaths.count <= 1 || nonEmptyPaths.count == filePaths.count || nonEmptyPaths.isEmpty
+        }()
+        
+        // URLs validation: if multiple fields exist, all should be filled  
+        let urlsValid: Bool = {
+            let nonEmptyUrls = urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+            // Either all empty (valid) or if any are filled, count should match total fields when > 1
+            return urls.count <= 1 || nonEmptyUrls.count == urls.count || nonEmptyUrls.isEmpty
+        }()
+        
+        return nameValid && sourcePrefsValid && filePathsValid && urlsValid
     }
     
     private func toggleSourcePreference(_ preference: SourcePreference) {

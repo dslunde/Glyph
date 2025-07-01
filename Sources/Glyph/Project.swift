@@ -26,7 +26,7 @@ struct Project: Identifiable, Codable, Hashable {
          depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
          filePaths: [String] = [], urls: [String] = [],
          hypotheses: String = "", controversialAspects: String = "", 
-         sensitivityLevel: SensitivityLevel = .low, isOnline: Bool = true) {
+         sensitivityLevel: SensitivityLevel = .medium, isOnline: Bool = true) {
         self.name = name
         self.description = description
         self.topic = topic
@@ -173,12 +173,15 @@ enum SourcePreference: String, CaseIterable, Codable {
 /// Sensitivity level for controversial topics
 enum SensitivityLevel: String, CaseIterable, Codable {
     case low = "low"
+    case medium = "medium"
     case high = "high"
     
     var displayName: String {
         switch self {
         case .low:
             return "Low"
+        case .medium:
+            return "Medium"
         case .high:
             return "High"
         }
@@ -188,6 +191,8 @@ enum SensitivityLevel: String, CaseIterable, Codable {
         switch self {
         case .low:
             return "Standard sensitivity for finding gaps and contradictions"
+        case .medium:
+            return "Balanced sensitivity for thorough analysis"
         case .high:
             return "High sensitivity for detecting rare perspectives and subtle insights"
         }

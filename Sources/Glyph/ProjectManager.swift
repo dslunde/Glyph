@@ -52,7 +52,7 @@ class ProjectManager: ObservableObject {
                       depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
                       filePaths: [String] = [], urls: [String] = [],
                       hypotheses: String = "", controversialAspects: String = "",
-                      sensitivityLevel: SensitivityLevel = .low) {
+                      sensitivityLevel: SensitivityLevel = .medium) {
         let newProject = Project(
             name: name,
             description: description,
