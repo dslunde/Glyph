@@ -304,7 +304,7 @@ struct CreateProjectView: View {
                         createProject()
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(!isFormValid)
+                    .disabled(!formIsValid)
                 }
             }
             .padding()
@@ -571,25 +571,22 @@ struct CreateProjectView: View {
     
     // MARK: - Helper Methods
     
-    private var isFormValid: Bool {
+    private var formIsValid: Bool {
         let nameValid = !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let topicValid = !topic.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         let sourcePrefsValid = !sourcePreferences.isEmpty
         
-        // File paths validation: if multiple fields exist, all should be filled
-        let filePathsValid: Bool = {
-            let nonEmptyPaths = filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            // Either all empty (valid) or if any are filled, count should match total fields when > 1
-            return filePaths.count <= 1 || nonEmptyPaths.count == filePaths.count || nonEmptyPaths.isEmpty
-        }()
+        // File paths validation: can have at most 1 empty field (n paths, at least n-1 filled)
+        let nonEmptyPaths = filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let requiredFilledPaths = max(0, filePaths.count - 1) // Can leave 1 empty
+        let filePathsValid = nonEmptyPaths.count >= requiredFilledPaths
         
-        // URLs validation: if multiple fields exist, all should be filled  
-        let urlsValid: Bool = {
-            let nonEmptyUrls = urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-            // Either all empty (valid) or if any are filled, count should match total fields when > 1
-            return urls.count <= 1 || nonEmptyUrls.count == urls.count || nonEmptyUrls.isEmpty
-        }()
-        
-        return nameValid && sourcePrefsValid && filePathsValid && urlsValid
+        // URLs validation: can have at most 1 empty field (m URLs, at least m-1 filled)
+        let nonEmptyUrls = urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let requiredFilledUrls = max(0, urls.count - 1) // Can leave 1 empty
+        let urlsValid = nonEmptyUrls.count >= requiredFilledUrls
+
+        return (nameValid && topicValid && sourcePrefsValid && filePathsValid && urlsValid)
     }
     
     private func toggleSourcePreference(_ preference: SourcePreference) {
