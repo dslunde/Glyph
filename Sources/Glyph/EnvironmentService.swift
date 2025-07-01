@@ -32,13 +32,16 @@ class EnvironmentService: ObservableObject {
     private func loadDotEnvFile() {
         guard let envPath = Bundle.main.path(forResource: ".env", ofType: nil) ?? findDotEnvFile() else {
             print("📄 No .env file found - using system environment variables only")
+            print("🔍 Bundle path: \(Bundle.main.bundlePath)")
+            print("🔍 Current directory: \(FileManager.default.currentDirectoryPath)")
             return
         }
         
         do {
             let envContent = try String(contentsOfFile: envPath)
-            parseDotEnvContent(envContent)
             print("✅ Loaded .env file from: \(envPath)")
+            print("🔍 .env file size: \(envContent.count) characters")
+            parseDotEnvContent(envContent)
         } catch {
             print("⚠️ Error reading .env file: \(error)")
         }
@@ -48,7 +51,8 @@ class EnvironmentService: ObservableObject {
         let possiblePaths = [
             // Current working directory
             FileManager.default.currentDirectoryPath + "/.env",
-            // Project root (common locations)
+            // Project root from bundle (for .build/Glyph.app/Contents/MacOS location)
+            Bundle.main.bundlePath + "/../../../../.env",
             Bundle.main.bundlePath + "/../../../.env",
             Bundle.main.bundlePath + "/../../.env",
             Bundle.main.bundlePath + "/../.env",
@@ -56,9 +60,14 @@ class EnvironmentService: ObservableObject {
             NSHomeDirectory() + "/.env"
         ]
         
+        print("🔍 Searching for .env file in paths:")
         for path in possiblePaths {
+            print("🔍   Checking: \(path)")
             if FileManager.default.fileExists(atPath: path) {
+                print("🔍   ✅ Found at: \(path)")
                 return path
+            } else {
+                print("🔍   ❌ Not found")
             }
         }
         
@@ -67,6 +76,7 @@ class EnvironmentService: ObservableObject {
     
     private func parseDotEnvContent(_ content: String) {
         let lines = content.components(separatedBy: .newlines)
+        print("🔍 Parsing .env with \(lines.count) lines")
         
         for line in lines {
             let trimmedLine = line.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -87,6 +97,12 @@ class EnvironmentService: ObservableObject {
             let cleanValue = value.hasPrefix("\"") && value.hasSuffix("\"") ? String(value.dropFirst().dropLast()) : value
             
             envVariables[key] = cleanValue
+            
+            // Log API keys found
+            if key.contains("API_KEY") {
+                let maskedValue = String(cleanValue.prefix(10)) + "..." + String(cleanValue.suffix(10))
+                print("🔍 Found API key: \(key) = \(maskedValue)")
+            }
         }
     }
     
@@ -100,6 +116,13 @@ class EnvironmentService: ObservableObject {
     private func updateAvailableKeys() {
         let requiredKeys = ["OPENAI_API_KEY", "TAVILY_API_KEY", "LANGCHAIN_API_KEY"]
         availableKeys = Set(requiredKeys.filter { getAPIKey(for: $0) != nil })
+        
+        // Debug: Log all environment variables loaded
+        print("🔍 Total environment variables loaded: \(envVariables.count)")
+        for key in requiredKeys {
+            let hasKey = getAPIKey(for: key) != nil
+            print("🔍 API Key status: \(key) = \(hasKey ? "✅ Found" : "❌ Missing")")
+        }
         
         // Log LangSmith configuration status
         if hasAPIKey(for: "LANGCHAIN_API_KEY") {
