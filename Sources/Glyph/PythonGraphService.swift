@@ -384,7 +384,7 @@ class PythonGraphService: ObservableObject {
                 return [
                     "success": true,
                     "results": swiftResults,
-                    "error_message": nil,
+                    "error_message": NSNull(),
                     "metadata": swiftMetadata
                 ]
                 

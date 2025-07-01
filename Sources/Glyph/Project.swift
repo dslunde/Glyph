@@ -5,7 +5,7 @@ import SwiftUI
 
 /// Main project data structure
 struct Project: Identifiable, Codable, Hashable {
-    let id = UUID()
+    var id = UUID()
     var name: String
     var description: String
     var topic: String
@@ -212,7 +212,7 @@ struct GraphData: Codable {
 
 /// Individual graph node
 struct GraphNode: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()
     var label: String
     var type: NodeType
     var properties: [String: String]
@@ -276,7 +276,7 @@ enum NodeType: String, CaseIterable, Codable {
 
 /// Graph edge (connection between nodes)
 struct GraphEdge: Identifiable, Codable {
-    let id = UUID()
+    var id = UUID()
     var sourceId: UUID
     var targetId: UUID
     var label: String

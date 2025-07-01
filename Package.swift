@@ -23,7 +23,9 @@ let package = Package(
                 .product(name: "Gzip", package: "GzipSwift")
             ],
             resources: [
-                .process("Resources")
+                .process("Resources"),
+                .copy("PythonAPIService.py"),
+                .copy("source_collection_workflow.py")
             ],
             swiftSettings: [
                 // Disable strict concurrency checking for PythonKit compatibility
