@@ -1,12 +1,15 @@
 import SwiftUI
+import AppKit
 
 @main
 struct GlyphApp: App {
     @StateObject private var projectManager = ProjectManager()
+    @StateObject private var authManager = AuthenticationManager()
     
     var body: some Scene {
         WindowGroup {
-            NavigationSplitView {
+            if authManager.isAuthenticated {
+                NavigationSplitView {
                 // Sidebar with project list
                 VStack(alignment: .leading, spacing: 0) {
                     // Header
@@ -92,6 +95,7 @@ struct GlyphApp: App {
                 if let selectedProject = projectManager.selectedProject {
                     ProjectDetailView(project: selectedProject)
                         .environmentObject(projectManager)
+                        .environmentObject(authManager)
                 } else {
                     // Welcome screen
                     VStack(spacing: 20) {
@@ -121,6 +125,17 @@ struct GlyphApp: App {
                             .controlSize(.large)
                         }
                         
+                        HStack {
+                            Text("Logged in as \(authManager.currentUser ?? "Unknown")")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            Button("Logout") {
+                                authManager.logout()
+                            }
+                            .font(.caption)
+                        }
+                        
                         if projectManager.isPythonInitialized {
                             HStack {
                                 Image(systemName: "checkmark.circle.fill")
@@ -143,14 +158,19 @@ struct GlyphApp: App {
                     .background(Color(nsColor: .textBackgroundColor))
                 }
             }
-            .sheet(isPresented: $projectManager.showingCreateProject) {
-                CreateProjectView()
-                    .environmentObject(projectManager)
-            }
-            .alert("Error", isPresented: $projectManager.showingError) {
-                Button("OK") { }
-            } message: {
-                Text(projectManager.errorMessage ?? "Unknown error")
+                .sheet(isPresented: $projectManager.showingCreateProject) {
+                    CreateProjectView()
+                        .environmentObject(projectManager)
+                }
+                .alert("Error", isPresented: $projectManager.showingError) {
+                    Button("OK") { }
+                } message: {
+                    Text(projectManager.errorMessage ?? "Unknown error")
+                }
+            } else {
+                // Login View
+                LoginView()
+                    .environmentObject(authManager)
             }
         }
     }
@@ -258,12 +278,40 @@ struct CreateProjectView: View {
     @State private var topic = ""
     @State private var depth: ProjectDepth = .moderate
     @State private var sourcePreferences: Set<SourcePreference> = [.reliable]
+    @State private var filePaths: [String] = [""]
+    @State private var urls: [String] = [""]
     @State private var hypotheses = ""
     @State private var controversialAspects = ""
     @State private var sensitivityLevel: SensitivityLevel = .low
     
     var body: some View {
-        NavigationView {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("New Project")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                HStack(spacing: 12) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                    .buttonStyle(.bordered)
+                    
+                    Button("Create") {
+                        createProject()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(!isFormValid)
+                }
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            
+            Divider()
+            
             ScrollView {
                 VStack(spacing: 24) {
                     // Basic Information
@@ -369,19 +417,122 @@ struct CreateProjectView: View {
                             }
                         }
                         
-                        HStack {
+                        // File and Folder Paths
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("File/Folder Paths")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                Button(action: { filePaths.append("") }) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            Text("Add local file or folder paths to analyze")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            ForEach(filePaths.indices, id: \.self) { index in
+                                HStack {
+                                    TextField("Enter file or folder path", text: $filePaths[index])
+                                        .textFieldStyle(.roundedBorder)
+                                    
+                                    Button(action: { selectFile(for: index) }) {
+                                        Image(systemName: "folder")
+                                            .foregroundColor(.blue)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .help("Browse for file or folder")
+                                    
+                                    if filePaths.count > 1 {
+                                        Button(action: { filePaths.remove(at: index) }) {
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundColor(.red)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        // URLs
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("URLs")
+                                    .font(.headline)
+                                
+                                Spacer()
+                                
+                                Button(action: { urls.append("") }) {
+                                    Image(systemName: "plus.circle.fill")
+                                        .foregroundColor(.green)
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            
+                            Text("Add web URLs to analyze (will be processed in offline mode)")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            
+                            ForEach(urls.indices, id: \.self) { index in
+                                HStack {
+                                    TextField("Enter URL (https://...)", text: $urls[index])
+                                        .textFieldStyle(.roundedBorder)
+                                    
+                                    if urls.count > 1 {
+                                        Button(action: { urls.remove(at: index) }) {
+                                            Image(systemName: "minus.circle.fill")
+                                                .foregroundColor(.red)
+                                        }
+                                        .buttonStyle(.plain)
+                                    }
+                                }
+                            }
+                        }
+                        
+                        VStack(alignment: .leading, spacing: 8) {
                             Text("Sensitivity Level")
                                 .font(.headline)
                             
-                            Spacer()
-                            
-                            Picker("Sensitivity Level", selection: $sensitivityLevel) {
-                                ForEach(SensitivityLevel.allCases, id: \.self) { level in
-                                    Text(level.displayName).tag(level)
+                            HStack {
+                                Text("Algorithm sensitivity for finding gaps and contradictions")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                
+                                Spacer()
+                                
+                                Menu {
+                                    ForEach(SensitivityLevel.allCases, id: \.self) { level in
+                                        Button(action: { sensitivityLevel = level }) {
+                                            HStack {
+                                                Text(level.displayName)
+                                                if sensitivityLevel == level {
+                                                    Image(systemName: "checkmark")
+                                                }
+                                            }
+                                        }
+                                    }
+                                } label: {
+                                    HStack {
+                                        Text(sensitivityLevel.displayName)
+                                        Image(systemName: "chevron.down")
+                                            .font(.caption)
+                                    }
+                                    .padding(.horizontal, 12)
+                                    .padding(.vertical, 6)
+                                    .background(Color(nsColor: .controlBackgroundColor))
+                                    .cornerRadius(6)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 6)
+                                            .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                                    )
                                 }
+                                .buttonStyle(.plain)
                             }
-                            .pickerStyle(.menu)
-                            .frame(width: 120)
                         }
                     }
                     
@@ -410,44 +561,21 @@ struct CreateProjectView: View {
                         }
                     }
                     
-                    Spacer()
+                    Spacer(minLength: 20)
                 }
                 .padding()
             }
-            .navigationTitle("New Project")
-            .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") {
-                        dismiss()
-                    }
-                }
-                
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Create") {
-                        projectManager.createProject(
-                            name: name,
-                            description: description,
-                            topic: topic,
-                            depth: depth,
-                            sourcePreferences: Array(sourcePreferences),
-                            hypotheses: hypotheses,
-                            controversialAspects: controversialAspects,
-                            sensitivityLevel: sensitivityLevel
-                        )
-                        dismiss()
-                    }
-                    .disabled(!isFormValid)
-                }
-            }
         }
-        .frame(width: 600, height: 700)
+        .frame(width: 700, height: 800)
     }
     
     // MARK: - Helper Methods
     
     private var isFormValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !sourcePreferences.isEmpty
+        !sourcePreferences.isEmpty &&
+        (filePaths.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty } ||
+         urls.contains { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty })
     }
     
     private func toggleSourcePreference(_ preference: SourcePreference) {
@@ -456,6 +584,39 @@ struct CreateProjectView: View {
         } else {
             sourcePreferences.insert(preference)
         }
+    }
+    
+    private func selectFile(for index: Int) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = true
+        panel.canCreateDirectories = false
+        
+        if panel.runModal() == .OK {
+            if let url = panel.url {
+                filePaths[index] = url.path
+            }
+        }
+    }
+    
+    private func createProject() {
+        let validFilePaths = filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let validUrls = urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        
+        projectManager.createProject(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: Array(sourcePreferences),
+            filePaths: validFilePaths,
+            urls: validUrls,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel
+        )
+        dismiss()
     }
 }
 
@@ -498,6 +659,7 @@ struct ProjectDetailView: View {
     let project: Project
     @EnvironmentObject private var projectManager: ProjectManager
     @State private var showingProjectInfo = false
+    @State private var selectedTab = 0
     
     var body: some View {
         VStack(spacing: 0) {
@@ -588,40 +750,24 @@ struct ProjectDetailView: View {
             
             Divider()
             
-            // Main content
-            if let graphData = project.graphData, !graphData.nodes.isEmpty {
-                HSplitView {
-                    // Graph visualization
-                    GraphVisualizationView(graphData: graphData)
-                        .frame(minWidth: 400)
-                    
-                    // Analysis panel
-                    AnalysisPanelView(graphData: graphData, insights: projectManager.insights)
-                        .frame(minWidth: 300, maxWidth: 400)
-                }
-            } else {
-                // Empty state with better information
-                VStack(spacing: 20) {
-                    Image(systemName: "network")
-                        .font(.system(size: 40))
-                        .foregroundColor(.secondary)
-                    
-                    Text("Loading Knowledge Graph...")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-                    
-                    VStack(spacing: 8) {
-                        Text("Graph data is being initialized")
-                            .font(.body)
-                            .foregroundColor(.secondary)
-                            .multilineTextAlignment(.center)
-                        
-                        Text("Configuration: \(project.depth.displayName) depth, \(project.sourcePreferences.count) source type(s)")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
+            // Tab View as specified in PRD
+            TabView(selection: $selectedTab) {
+                // Learning Plan Tab
+                LearningPlanView(project: project)
+                    .tabItem {
+                        Image(systemName: "doc.text")
+                        Text("Learning Plan")
                     }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .tag(0)
+                
+                // Knowledge Graph Tab
+                KnowledgeGraphView(project: project)
+                    .environmentObject(projectManager)
+                    .tabItem {
+                        Image(systemName: "network")
+                        Text("Knowledge Graph")
+                    }
+                    .tag(1)
             }
         }
         .sheet(isPresented: $showingProjectInfo) {
@@ -1216,5 +1362,248 @@ struct ProjectInfoView: View {
             }
         }
         .frame(width: 500, height: 600)
+    }
+}
+
+// MARK: - Authentication Views
+
+struct LoginView: View {
+    @EnvironmentObject private var authManager: AuthenticationManager
+    @State private var username = ""
+    @State private var password = ""
+    @State private var isCreatingAccount = false
+    @State private var showingError = false
+    @State private var errorMessage = ""
+    
+    var body: some View {
+        VStack(spacing: 30) {
+            // App branding
+            VStack(spacing: 16) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 80))
+                    .foregroundColor(.purple)
+                
+                VStack(spacing: 8) {
+                    Text("Glyph")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                    
+                    Text("Knowledge Graph Explorer")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                }
+            }
+            
+            // Login form
+            VStack(spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Username")
+                        .font(.headline)
+                    TextField("Enter username", text: $username)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Password")
+                        .font(.headline)
+                    SecureField("Enter password", text: $password)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 300)
+                }
+                
+                VStack(spacing: 12) {
+                    Button(action: performLogin) {
+                        Text(isCreatingAccount ? "Create Account" : "Login")
+                            .frame(width: 280)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .disabled(username.isEmpty || password.isEmpty)
+                    
+                    Button(action: { isCreatingAccount.toggle() }) {
+                        Text(isCreatingAccount ? "Already have an account? Login" : "Need an account? Create one")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.caption)
+                }
+            }
+            
+            Text("Sessions timeout after 1 hour of inactivity")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(nsColor: .textBackgroundColor))
+        .alert("Error", isPresented: $showingError) {
+            Button("OK") { }
+        } message: {
+            Text(errorMessage)
+        }
+    }
+    
+    private func performLogin() {
+        if isCreatingAccount {
+            if password.count < 6 {
+                errorMessage = "Password must be at least 6 characters"
+                showingError = true
+                return
+            }
+            
+            if authManager.createAccount(username: username, password: password) {
+                // Success - authManager will handle state
+            } else {
+                errorMessage = "Failed to create account"
+                showingError = true
+            }
+        } else {
+            if authManager.login(username: username, password: password) {
+                // Success - authManager will handle state
+            } else {
+                errorMessage = "Invalid username or password"
+                showingError = true
+            }
+        }
+    }
+}
+
+// MARK: - Tab Views
+
+struct LearningPlanView: View {
+    let project: Project
+    @State private var learningPlanText: String
+    @State private var isEditing = false
+    
+    init(project: Project) {
+        self.project = project
+        self._learningPlanText = State(initialValue: project.learningPlan)
+    }
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Learning Plan")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                
+                Spacer()
+                
+                Button(action: { isEditing.toggle() }) {
+                    Text(isEditing ? "View" : "Edit")
+                }
+                .buttonStyle(.bordered)
+            }
+            .padding()
+            .background(Color(nsColor: .controlBackgroundColor))
+            
+            Divider()
+            
+            // Content
+            if isEditing {
+                // Rich text editor
+                ScrollView {
+                    TextEditor(text: $learningPlanText)
+                        .font(.body)
+                        .padding()
+                }
+            } else {
+                // Rendered markdown view
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        // Simple markdown rendering for demo
+                        ForEach(learningPlanText.components(separatedBy: "\n"), id: \.self) { line in
+                            if line.hasPrefix("# ") {
+                                Text(String(line.dropFirst(2)))
+                                    .font(.title)
+                                    .fontWeight(.bold)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            } else if line.hasPrefix("## ") {
+                                Text(String(line.dropFirst(3)))
+                                    .font(.title2)
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 8)
+                            } else if line.hasPrefix("### ") {
+                                Text(String(line.dropFirst(4)))
+                                    .font(.title3)
+                                    .fontWeight(.medium)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 4)
+                            } else if line.hasPrefix("- ") {
+                                HStack(alignment: .top) {
+                                    Text("•")
+                                        .font(.body)
+                                    Text(String(line.dropFirst(2)))
+                                        .font(.body)
+                                    Spacer()
+                                }
+                                .padding(.leading, 16)
+                            } else if line.hasPrefix("1. ") || line.hasPrefix("2. ") || line.hasPrefix("3. ") || line.hasPrefix("4. ") {
+                                HStack(alignment: .top) {
+                                    Text(String(line.prefix(3)))
+                                        .font(.body)
+                                        .fontWeight(.medium)
+                                    Text(String(line.dropFirst(3)))
+                                        .font(.body)
+                                    Spacer()
+                                }
+                                .padding(.leading, 16)
+                            } else if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text(line)
+                                    .font(.body)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                    }
+                    .padding()
+                }
+            }
+        }
+    }
+}
+
+struct KnowledgeGraphView: View {
+    let project: Project
+    @EnvironmentObject private var projectManager: ProjectManager
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Main content
+            if let graphData = project.graphData, !graphData.nodes.isEmpty {
+                HSplitView {
+                    // Graph visualization
+                    GraphVisualizationView(graphData: graphData)
+                        .frame(minWidth: 400)
+                    
+                    // Analysis panel
+                    AnalysisPanelView(graphData: graphData, insights: projectManager.insights)
+                        .frame(minWidth: 300, maxWidth: 400)
+                }
+            } else {
+                // Empty state with better information
+                VStack(spacing: 20) {
+                    Image(systemName: "network")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    
+                    Text("Loading Knowledge Graph...")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+                    
+                    VStack(spacing: 8) {
+                        Text("Graph data is being initialized")
+                            .font(.body)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
+                        
+                        Text("Configuration: \(project.depth.displayName) depth, \(project.sourcePreferences.count) source type(s)")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
     }
 } 

@@ -50,6 +50,7 @@ class ProjectManager: ObservableObject {
     
     func createProject(name: String, description: String = "", topic: String = "",
                       depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+                      filePaths: [String] = [], urls: [String] = [],
                       hypotheses: String = "", controversialAspects: String = "",
                       sensitivityLevel: SensitivityLevel = .low) {
         let newProject = Project(
@@ -58,6 +59,8 @@ class ProjectManager: ObservableObject {
             topic: topic,
             depth: depth,
             sourcePreferences: sourcePreferences,
+            filePaths: filePaths,
+            urls: urls,
             hypotheses: hypotheses,
             controversialAspects: controversialAspects,
             sensitivityLevel: sensitivityLevel,
@@ -166,6 +169,8 @@ class ProjectManager: ObservableObject {
                 topic: "Spider-Man character relationships and story elements",
                 depth: .moderate,
                 sourcePreferences: [.reliable, .insider],
+                filePaths: [],
+                urls: [],
                 isOnline: true
             )
             projects.append(sampleProject)
