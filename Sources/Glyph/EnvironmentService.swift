@@ -100,6 +100,13 @@ class EnvironmentService: ObservableObject {
     private func updateAvailableKeys() {
         let requiredKeys = ["OPENAI_API_KEY", "TAVILY_API_KEY", "LANGCHAIN_API_KEY"]
         availableKeys = Set(requiredKeys.filter { getAPIKey(for: $0) != nil })
+        
+        // Log LangSmith configuration status
+        if hasAPIKey(for: "LANGCHAIN_API_KEY") {
+            let tracingEnabled = getAPIKey(for: "LANGCHAIN_TRACING_V2") == "true"
+            let project = getAPIKey(for: "LANGCHAIN_PROJECT") ?? "default"
+            print("🔍 LangSmith configured: API key ✅, Tracing: \(tracingEnabled ? "✅" : "❌"), Project: \(project)")
+        }
     }
     
     // MARK: - API Key Access

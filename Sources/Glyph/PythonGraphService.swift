@@ -326,12 +326,28 @@ class PythonGraphService: ObservableObject {
             throw APIError.networkError("Python not initialized")
         }
         
-        if hasModule("tavily") && hasModule("requests") {
-            // TODO: Implement real Tavily integration
-            print("📡 Real Tavily integration available but not yet implemented")
+        print("🔍 Starting Tavily search with \(queries.count) queries, limit: \(limit)")
+        
+        if hasModule("tavily") && hasModule("requests") && hasModule("langsmith") {
+            print("📡 Real Tavily + LangSmith integration available but not yet implemented")
+            print("🔍 Would use LangSmith to trace Tavily API calls")
+            // TODO: Implement real Tavily integration with LangSmith tracing
+            // This would involve:
+            // 1. Using LangSmith to trace each Tavily API call
+            // 2. Logging query, response count, relevance scores
+            // 3. Tracking API usage and performance metrics
+        } else {
+            print("📡 Using mock Tavily search results (Tavily/LangSmith modules not available)")
         }
         
-        return generateMockTavilyResults(queries: queries, limit: limit)
+        for (index, query) in queries.enumerated() {
+            print("   Query \(index + 1): \(query)")
+        }
+        
+        let results = generateMockTavilyResults(queries: queries, limit: limit)
+        print("✅ Generated \(results.count) search results")
+        
+        return results
     }
     
     private func generateMockTavilyResults(queries: [String], limit: Int) -> [[String: Any]] {
@@ -356,19 +372,35 @@ class PythonGraphService: ObservableObject {
             throw APIError.networkError("Python not initialized")
         }
         
-        if hasModule("openai") {
-            // TODO: Implement real OpenAI integration
-            print("🤖 Real OpenAI integration available but not yet implemented")
+        if hasModule("openai") && hasModule("langsmith") {
+            print("🤖 Real OpenAI + LangSmith integration available but not yet implemented")
+            print("🔍 Would use LangSmith to trace OpenAI query generation calls")
+            // TODO: Implement real OpenAI integration with LangSmith tracing
+            // This would involve:
+            // 1. Setting up LangSmith environment in Python
+            // 2. Using @traceable decorator on OpenAI calls
+            // 3. Logging prompt, response, tokens, and timing
+        } else {
+            print("🤖 Using mock query generation (OpenAI/LangSmith modules not available)")
         }
         
+        print("📝 Generating search queries for topic: '\(topic)'")
+        
         // Generate intelligent queries based on topic
-        return [
+        let queries = [
             "\(topic) fundamentals and basic concepts",
             "\(topic) latest research and developments 2024", 
             "\(topic) expert opinions and analysis",
             "\(topic) practical applications and case studies",
             "\(topic) controversies and different perspectives"
         ]
+        
+        print("✅ Generated \(queries.count) search queries")
+        for (index, query) in queries.enumerated() {
+            print("   \(index + 1). \(query)")
+        }
+        
+        return queries
     }
     
     func scoreReliability(results: [[String: Any]], sourcePreferences: [String], apiKey: String) async throws -> [[String: Any]] {
@@ -376,12 +408,28 @@ class PythonGraphService: ObservableObject {
             throw APIError.networkError("Python not initialized")
         }
         
-        return results.map { result in
+        print("🎯 Starting reliability scoring for \(results.count) results")
+        print("   Source preferences: \(sourcePreferences)")
+        
+        if hasModule("openai") && hasModule("langsmith") {
+            print("🤖 Real OpenAI + LangSmith integration available for reliability scoring")
+            print("🔍 Would use LangSmith to trace reliability scoring LLM calls")
+            // TODO: Implement real LLM reliability scoring with LangSmith tracing
+            // This would involve:
+            // 1. Using OpenAI to analyze content quality and source reliability
+            // 2. LangSmith tracing of prompt, response, and scoring logic
+            // 3. Advanced reliability metrics beyond domain-based scoring
+        } else {
+            print("🎯 Using mock reliability scoring (OpenAI/LangSmith modules not available)")
+        }
+        
+        let scoredResults = results.map { result in
             var scored = result
             
             // Simple reliability scoring based on URL domain
             let url = result["url"] as? String ?? ""
             let urlLower = url.lowercased()
+            let title = result["title"] as? String ?? "Unknown"
             
             var score = 50
             if urlLower.contains("edu") || urlLower.contains("gov") {
@@ -393,8 +441,14 @@ class PythonGraphService: ObservableObject {
             }
             
             scored["reliabilityScore"] = score
+            print("   📊 '\(title)' → \(score)% reliability")
             return scored
         }
+        
+        let averageScore = scoredResults.compactMap { $0["reliabilityScore"] as? Int }.reduce(0, +) / max(1, scoredResults.count)
+        print("✅ Completed reliability scoring - Average: \(averageScore)%")
+        
+        return scoredResults
     }
     
     // MARK: - Package Installation Support

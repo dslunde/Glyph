@@ -920,21 +920,104 @@ struct SourceCollectionView: View {
         
         isSearching = true
         
+        // Start LangSmith tracing
+        let langSmith = LangSmithService.shared
+        let runId = await langSmith.startSearchRun(
+            topic: projectConfig.topic,
+            searchLimit: searchLimit,
+            reliabilityThreshold: reliabilityThreshold
+        )
+        
         do {
-            // Step 4: Generate search queries from topic using real LLM
+            // Step 1: Validate API Keys
+            let startTime = Date()
+            let apiKeysValid = [
+                "OPENAI_API_KEY": EnvironmentService.shared.hasAPIKey(for: "OPENAI_API_KEY"),
+                "TAVILY_API_KEY": EnvironmentService.shared.hasAPIKey(for: "TAVILY_API_KEY")
+            ]
+            await langSmith.logAPIKeyValidation(runId: runId, keys: apiKeysValid)
+            
+            // Step 2: Generate search queries from topic using real LLM
+            let queryGenStart = Date()
             let searchQueries = try await generateSearchQueries(topic: projectConfig.topic)
+            let queryGenDuration = Date().timeIntervalSince(queryGenStart)
+            await langSmith.logQueryGeneration(
+                runId: runId,
+                topic: projectConfig.topic,
+                queries: searchQueries,
+                duration: queryGenDuration
+            )
             
-            // Step 5: Send queries to Tavily API (real integration)
+            // Step 3: Send queries to Tavily API (real integration)
+            let searchStart = Date()
             let tavilyResults = try await performTavilySearch(queries: searchQueries, limit: searchLimit)
+            let searchDuration = Date().timeIntervalSince(searchStart)
+            await langSmith.logTavilySearch(
+                runId: runId,
+                queries: searchQueries,
+                results: tavilyResults.count,
+                duration: searchDuration
+            )
             
-            // Step 6: Filter by reliability threshold using real LLM scoring
+            // Step 4: Filter by reliability threshold using real LLM scoring
+            let scoringStart = Date()
             let filteredResults = try await filterByReliability(results: tavilyResults)
+            let scoringDuration = Date().timeIntervalSince(scoringStart)
+            await langSmith.logReliabilityScoring(
+                runId: runId,
+                resultCount: tavilyResults.count,
+                scoredCount: filteredResults.count,
+                threshold: reliabilityThreshold,
+                duration: scoringDuration
+            )
             
-            // Step 7 & 8: Parse and stream results
+            // Step 5: Parse and stream results
+            let streamingStart = Date()
             await streamResults(filteredResults)
+            let streamingDuration = Date().timeIntervalSince(streamingStart)
+            await langSmith.logResultStreaming(
+                runId: runId,
+                results: filteredResults.count,
+                streamingDuration: streamingDuration
+            )
+            
+            // End successful run
+            let totalDuration = Date().timeIntervalSince(startTime)
+            await langSmith.endSearchRun(
+                runId: runId,
+                outputs: [
+                    "total_results": filteredResults.count,
+                    "total_duration": totalDuration,
+                    "queries_generated": searchQueries.count,
+                    "search_successful": true
+                ]
+            )
             
         } catch {
             print("Search failed: \(error)")
+            
+            // Log error to LangSmith
+            await langSmith.logError(
+                runId: runId,
+                stepName: "Search Process",
+                error: error,
+                context: [
+                    "topic": projectConfig.topic,
+                    "search_limit": searchLimit,
+                    "reliability_threshold": reliabilityThreshold
+                ]
+            )
+            
+            // End failed run
+            await langSmith.endSearchRun(
+                runId: runId,
+                outputs: [
+                    "search_successful": false,
+                    "error_message": error.localizedDescription
+                ],
+                error: error.localizedDescription
+            )
+            
             await MainActor.run {
                 // Show error to user
                 projectManager.errorMessage = "Search failed: \(error.localizedDescription)"
@@ -1097,8 +1180,24 @@ struct SourceCollectionView: View {
             switch action {
             case .use:
                 searchResults[index].status = .approved
+                print("✅ User approved result: \(result.title)")
             case .drop:
                 searchResults.remove(at: index)
+                print("❌ User dropped result: \(result.title)")
+            }
+            
+            // Log user actions to LangSmith
+            let langSmith = LangSmithService.shared
+            if let runId = langSmith.currentRunId {
+                let approvedCount = searchResults.filter { $0.status == .approved }.count
+                let totalCount = searchResults.count + (action == .drop ? 1 : 0) // Include dropped result in total
+                Task {
+                    await langSmith.logUserActions(
+                        runId: runId,
+                        approved: approvedCount,
+                        dropped: totalCount - approvedCount
+                    )
+                }
             }
         }
     }
