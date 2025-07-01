@@ -170,7 +170,7 @@ The queries should be:
 
 Cover these areas:
 1. Fundamental concepts and definitions
-2. Recent developments and research (2024)
+2. Recent developments and research (2025)
 3. Expert opinions and analysis
 4. Practical applications and case studies
 5. Controversies and different perspectives

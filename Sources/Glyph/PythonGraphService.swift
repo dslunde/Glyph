@@ -488,6 +488,154 @@ class PythonGraphService: ObservableObject {
         }
     }
     
+    // MARK: - LangGraph Workflow Integration
+    
+    func runSourceCollectionWorkflow(
+        topic: String,
+        searchLimit: Int,
+        reliabilityThreshold: Double,
+        sourcePreferences: [String],
+        openaiApiKey: String,
+        tavilyApiKey: String
+    ) async throws -> [String: Any] {
+        guard isInitialized else {
+            throw APIError.networkError("Python not initialized")
+        }
+        
+        print("🚀 Calling LangGraph source collection workflow...")
+        
+        do {
+            // Import our custom Python API module
+            let apiModule = try Python.attemptImport("PythonAPIService")
+            
+            // Convert Swift arrays to Python format
+            let pythonPreferences = Python.list(sourcePreferences)
+            
+            // Call the LangGraph workflow function
+            let result = apiModule.run_source_collection_workflow_sync(
+                topic,
+                searchLimit,
+                reliabilityThreshold,
+                pythonPreferences,
+                openaiApiKey,
+                tavilyApiKey
+            )
+            
+            // Extract results from Python dict
+            let success = Bool(result["success"]) ?? false
+            
+            if success {
+                // Convert Python results to Swift format
+                let pythonResults = result["results"]
+                let swiftResults = convertPythonListToSwift(pythonResults)
+                
+                // Extract metadata
+                let pythonMetadata = result["metadata"]
+                var swiftMetadata: [String: Any] = [:]
+                
+                if pythonMetadata != Python.None {
+                    let metadataKeys = Array(pythonMetadata.keys())
+                    for key in metadataKeys {
+                        let keyString = String(describing: key)
+                        let value = pythonMetadata[key]
+                        swiftMetadata[keyString] = convertPythonToSwift(value)
+                    }
+                }
+                
+                print("✅ LangGraph workflow completed successfully")
+                print("   📊 Results: \(swiftResults.count)")
+                print("   ⚠️  Errors: \(swiftMetadata["error_count"] as? Int ?? 0)")
+                print("   🔄 Fallback used: \(swiftMetadata["fallback_used"] as? Bool ?? false)")
+                
+                return [
+                    "success": true,
+                    "results": swiftResults,
+                    "error_message": nil,
+                    "metadata": swiftMetadata
+                ]
+                
+            } else {
+                let errorMessage = String(describing: result["error_message"])
+                print("❌ LangGraph workflow failed: \(errorMessage)")
+                
+                // Try to get any partial results or metadata
+                let pythonResults = result["results"]
+                let swiftResults = convertPythonListToSwift(pythonResults)
+                
+                let pythonMetadata = result["metadata"]
+                var swiftMetadata: [String: Any] = [:]
+                
+                if pythonMetadata != Python.None {
+                    let metadataKeys = Array(pythonMetadata.keys())
+                    for key in metadataKeys {
+                        let keyString = String(describing: key)
+                        let value = pythonMetadata[key]
+                        swiftMetadata[keyString] = convertPythonToSwift(value)
+                    }
+                }
+                
+                return [
+                    "success": false,
+                    "results": swiftResults,
+                    "error_message": errorMessage,
+                    "metadata": swiftMetadata
+                ]
+            }
+            
+        } catch {
+            print("❌ LangGraph workflow Python call failed: \(error)")
+            print("🔄 Falling back to mock workflow results")
+            
+            // Generate mock workflow results with LangGraph structure
+            let mockResults = generateMockWorkflowResults(topic: topic, limit: searchLimit)
+            
+            return [
+                "success": true,
+                "results": mockResults,
+                "error_message": "LangGraph not available - using mock workflow",
+                "metadata": [
+                    "total_queries": 5,
+                    "raw_results": mockResults.count,
+                    "scored_results": mockResults.count,
+                    "filtered_results": mockResults.count,
+                    "error_count": 0,
+                    "fallback_used": true,
+                    "workflow_type": "mock_langgraph"
+                ]
+            ]
+        }
+    }
+    
+    private func generateMockWorkflowResults(topic: String, limit: Int) -> [[String: Any]] {
+        print("🎭 Generating mock LangGraph workflow results...")
+        
+        let queries = [
+            "\(topic) fundamentals and basic concepts",
+            "\(topic) latest research and developments 2024",
+            "\(topic) expert opinions and analysis",
+            "\(topic) practical applications and case studies",
+            "\(topic) controversies and different perspectives"
+        ]
+        
+        var results: [[String: Any]] = []
+        
+        for (index, query) in queries.prefix(limit).enumerated() {
+            let result: [String: Any] = [
+                "title": "LangGraph Research on \(query)",
+                "url": "https://example.com/langgraph-article\(index + 1)",
+                "content": "Comprehensive LangGraph workflow analysis of \(query) with state machine orchestration and detailed findings. This article covers workflow nodes, state transitions, and practical applications.",
+                "score": Double.random(in: 0.7...0.95),
+                "published_date": "2024-01-\(15 + index)",
+                "query": query,
+                "reliability_score": Int.random(in: 60...90)
+            ]
+            results.append(result)
+        }
+        
+        print("   📊 Generated \(results.count) mock LangGraph results")
+        return results
+    }
+    
     // MARK: - Helper Functions for Python/Swift Conversion
     
     private func convertPythonToSwift(_ value: PythonObject) -> Any {

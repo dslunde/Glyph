@@ -127,7 +127,7 @@ def handle_api_error(service: str, error: Exception) -> APIError:
 
 
 @traceable(name="generate_search_queries_real")
-def generate_search_queries(topic: str, api_key: str) -> Dict[str, Union[List[str], str]]:
+def generate_search_queries(topic: str, api_key: str) -> Dict[str, Union[List[str], str, bool]]:
     """
     Generate search queries using OpenAI API with comprehensive error handling
     
@@ -522,6 +522,182 @@ def test_api_integration():
     print(f"Scored: {len(score_result['results'])}")
     
     print("\n✅ API integration test complete!")
+
+
+# MARK: - LangGraph Workflow Integration
+
+@traceable(name="run_langgraph_source_collection")
+def run_source_collection_workflow_sync(
+    topic: str,
+    search_limit: int = 5,
+    reliability_threshold: float = 60.0,
+    source_preferences: List[str] = None,
+    openai_api_key: str = "",
+    tavily_api_key: str = ""
+) -> Dict[str, Union[List[Dict[str, Any]], str, bool]]:
+    """
+    Synchronous wrapper for the LangGraph source collection workflow
+    
+    This function provides a sync interface for Swift to call the async LangGraph workflow.
+    
+    Args:
+        topic: Research topic
+        search_limit: Maximum results per query
+        reliability_threshold: Minimum reliability score
+        source_preferences: List of source preference types
+        openai_api_key: OpenAI API key
+        tavily_api_key: Tavily API key
+        
+    Returns:
+        Dict with 'success', 'results', and metadata keys
+    """
+    print(f"🚀 Starting LangGraph workflow for topic: '{topic}'")
+    
+    try:
+        # Import the workflow module
+        import source_collection_workflow
+        
+        # Check if LangGraph is available
+        if not source_collection_workflow.LANGGRAPH_AVAILABLE:
+            print("❌ LangGraph not available - falling back to sequential processing")
+            return run_sequential_fallback(
+                topic, search_limit, reliability_threshold, 
+                source_preferences or ["reliable"], 
+                openai_api_key, tavily_api_key
+            )
+        
+        # Run the async workflow
+        async def run_workflow():
+            return await source_collection_workflow.run_source_collection_workflow(
+                topic=topic,
+                search_limit=search_limit,
+                reliability_threshold=reliability_threshold,
+                source_preferences=source_preferences,
+                openai_api_key=openai_api_key,
+                tavily_api_key=tavily_api_key
+            )
+        
+        # Execute the workflow
+        import asyncio
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        
+        try:
+            result = loop.run_until_complete(run_workflow())
+            loop.close()
+            
+            print(f"✅ LangGraph workflow completed successfully")
+            print(f"   Results: {len(result.get('results', []))}")
+            print(f"   Errors: {result.get('metadata', {}).get('error_count', 0)}")
+            
+            return result
+            
+        except Exception as e:
+            loop.close()
+            raise e
+        
+    except Exception as e:
+        print(f"❌ LangGraph workflow failed: {e}")
+        print("🔄 Falling back to sequential processing...")
+        
+        # Fallback to original sequential processing
+        return run_sequential_fallback(
+            topic, search_limit, reliability_threshold,
+            source_preferences or ["reliable"],
+            openai_api_key, tavily_api_key
+        )
+
+
+def run_sequential_fallback(
+    topic: str,
+    search_limit: int,
+    reliability_threshold: float,
+    source_preferences: List[str],
+    openai_api_key: str,
+    tavily_api_key: str
+) -> Dict[str, Union[List[Dict[str, Any]], str, bool]]:
+    """
+    Fallback to original sequential processing when LangGraph fails
+    """
+    print("🔄 Running sequential fallback workflow...")
+    
+    try:
+        # Step 1: Generate queries
+        query_result = generate_search_queries(topic, openai_api_key)
+        if not query_result["success"]:
+            return {
+                "success": False,
+                "results": [],
+                "error_message": f"Query generation failed: {query_result.get('error', 'Unknown error')}",
+                "metadata": {"error_count": 1, "fallback_used": True}
+            }
+        
+        queries = query_result["queries"]
+        print(f"   Generated {len(queries)} queries")
+        
+        # Step 2: Search with Tavily
+        search_result = search_with_tavily(queries, search_limit, tavily_api_key)
+        if not search_result["success"]:
+            return {
+                "success": False,
+                "results": [],
+                "error_message": f"Search failed: {search_result.get('error', 'Unknown error')}",
+                "metadata": {"error_count": 1, "fallback_used": True}
+            }
+        
+        raw_results = search_result["results"]
+        print(f"   Found {len(raw_results)} raw results")
+        
+        # Step 3: Score reliability
+        score_result = score_reliability(raw_results, source_preferences, openai_api_key)
+        if not score_result["success"]:
+            return {
+                "success": False,
+                "results": [],
+                "error_message": f"Scoring failed: {score_result.get('error', 'Unknown error')}",
+                "metadata": {"error_count": 1, "fallback_used": True}
+            }
+        
+        scored_results = score_result["results"]
+        print(f"   Scored {len(scored_results)} results")
+        
+        # Step 4: Apply filtering logic (simplified)
+        filtered_results = []
+        for result in scored_results:
+            score = result.get("reliabilityScore", 50)
+            
+            # Simple filtering based on preferences
+            if "reliable" in source_preferences and score >= 60:
+                filtered_results.append(result)
+            elif "unreliable" in source_preferences and score <= 40:
+                filtered_results.append(result)
+            elif score >= 60 or score <= 40:  # Accept both extremes if mixed preferences
+                filtered_results.append(result)
+        
+        print(f"   Filtered to {len(filtered_results)} final results")
+        
+        return {
+            "success": True,
+            "results": filtered_results,
+            "error_message": None,
+            "metadata": {
+                "total_queries": len(queries),
+                "raw_results": len(raw_results),
+                "scored_results": len(scored_results),
+                "filtered_results": len(filtered_results),
+                "error_count": 0,
+                "fallback_used": True
+            }
+        }
+        
+    except Exception as e:
+        print(f"❌ Sequential fallback failed: {e}")
+        return {
+            "success": False,
+            "results": [],
+            "error_message": str(e),
+            "metadata": {"error_count": 1, "fallback_used": True}
+        }
 
 
 if __name__ == "__main__":

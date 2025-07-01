@@ -929,82 +929,86 @@ struct SourceCollectionView: View {
         )
         
         do {
-            // Step 1: Validate API Keys
             let startTime = Date()
+            
+            // Validate API Keys
             let apiKeysValid = [
                 "OPENAI_API_KEY": EnvironmentService.shared.hasAPIKey(for: "OPENAI_API_KEY"),
                 "TAVILY_API_KEY": EnvironmentService.shared.hasAPIKey(for: "TAVILY_API_KEY")
             ]
             await langSmith.logAPIKeyValidation(runId: runId, keys: apiKeysValid)
             
-            // Step 2: Generate search queries from topic using real LLM
-            let queryGenStart = Date()
-            let searchQueries = try await generateSearchQueries(topic: projectConfig.topic)
-            let queryGenDuration = Date().timeIntervalSince(queryGenStart)
-            await langSmith.logQueryGeneration(
-                runId: runId,
-                topic: projectConfig.topic,
-                queries: searchQueries,
-                duration: queryGenDuration
-            )
+            // Run LangGraph workflow instead of sequential steps
+            print("🚀 Starting LangGraph source collection workflow...")
+            let workflowResult = try await runLangGraphWorkflow()
             
-            // Step 3: Send queries to Tavily API (real integration)
-            let searchStart = Date()
-            let tavilyResults = try await performTavilySearch(queries: searchQueries, limit: searchLimit)
-            let searchDuration = Date().timeIntervalSince(searchStart)
-            await langSmith.logTavilySearch(
-                runId: runId,
-                queries: searchQueries,
-                results: tavilyResults.count,
-                duration: searchDuration
-            )
-            
-            // Step 4: Filter by reliability threshold using real LLM scoring
-            let scoringStart = Date()
-            let filteredResults = try await filterByReliability(results: tavilyResults)
-            let scoringDuration = Date().timeIntervalSince(scoringStart)
-            await langSmith.logReliabilityScoring(
-                runId: runId,
-                resultCount: tavilyResults.count,
-                scoredCount: filteredResults.count,
-                threshold: reliabilityThreshold,
-                duration: scoringDuration
-            )
-            
-            // Step 5: Parse and stream results
-            let streamingStart = Date()
-            await streamResults(filteredResults)
-            let streamingDuration = Date().timeIntervalSince(streamingStart)
-            await langSmith.logResultStreaming(
-                runId: runId,
-                results: filteredResults.count,
-                streamingDuration: streamingDuration
-            )
-            
-            // End successful run
-            let totalDuration = Date().timeIntervalSince(startTime)
-            await langSmith.endSearchRun(
-                runId: runId,
-                outputs: [
-                    "total_results": filteredResults.count,
-                    "total_duration": totalDuration,
-                    "queries_generated": searchQueries.count,
-                    "search_successful": true
-                ]
-            )
+            // Process workflow results
+            if workflowResult["success"] as? Bool == true {
+                if let results = workflowResult["results"] as? [[String: Any]] {
+                    let filteredResults = results.compactMap { resultDict -> TavilyResult? in
+                        guard let title = resultDict["title"] as? String,
+                              let url = resultDict["url"] as? String,
+                              let content = resultDict["content"] as? String else {
+                            return nil
+                        }
+                        
+                        var result = TavilyResult(
+                            title: title,
+                            url: url,
+                            content: content,
+                            score: resultDict["score"] as? Double ?? 0.0,
+                            publishedDate: resultDict["published_date"] as? String ?? ""
+                        )
+                        result.reliabilityScore = resultDict["reliability_score"] as? Double ?? 50.0
+                        return result
+                    }
+                    
+                    // Stream results to UI
+                    await streamResults(filteredResults)
+                    
+                    // Log success to LangSmith
+                    let totalDuration = Date().timeIntervalSince(startTime)
+                    let metadata = workflowResult["metadata"] as? [String: Any] ?? [:]
+                    
+                    await langSmith.endSearchRun(
+                        runId: runId,
+                        outputs: [
+                            "total_results": filteredResults.count,
+                            "total_duration": totalDuration,
+                            "queries_generated": metadata["total_queries"] as? Int ?? 0,
+                            "search_successful": true,
+                            "workflow_type": "langgraph",
+                            "error_count": metadata["error_count"] as? Int ?? 0,
+                            "fallback_used": metadata["fallback_used"] as? Bool ?? false
+                        ]
+                    )
+                    
+                    print("✅ LangGraph workflow completed successfully")
+                    print("   📊 Final results: \(filteredResults.count)")
+                    print("   ⚠️  Errors: \(metadata["error_count"] as? Int ?? 0)")
+                    print("   🔄 Fallback used: \(metadata["fallback_used"] as? Bool ?? false)")
+                    
+                } else {
+                    throw APIError.invalidResponse
+                }
+            } else {
+                let errorMessage = workflowResult["error_message"] as? String ?? "Unknown workflow error"
+                throw APIError.networkError(errorMessage)
+            }
             
         } catch {
-            print("Search failed: \(error)")
+            print("❌ LangGraph workflow failed: \(error)")
             
             // Log error to LangSmith
             await langSmith.logError(
                 runId: runId,
-                stepName: "Search Process",
+                stepName: "LangGraph Workflow",
                 error: error,
                 context: [
                     "topic": projectConfig.topic,
                     "search_limit": searchLimit,
-                    "reliability_threshold": reliabilityThreshold
+                    "reliability_threshold": reliabilityThreshold,
+                    "workflow_type": "langgraph"
                 ]
             )
             
@@ -1013,14 +1017,15 @@ struct SourceCollectionView: View {
                 runId: runId,
                 outputs: [
                     "search_successful": false,
-                    "error_message": error.localizedDescription
+                    "error_message": error.localizedDescription,
+                    "workflow_type": "langgraph"
                 ],
                 error: error.localizedDescription
             )
             
             await MainActor.run {
                 // Show error to user
-                projectManager.errorMessage = "Search failed: \(error.localizedDescription)"
+                projectManager.errorMessage = "LangGraph workflow failed: \(error.localizedDescription)"
                 projectManager.showingError = true
             }
         }
@@ -1028,81 +1033,34 @@ struct SourceCollectionView: View {
         isSearching = false
     }
     
-    private func generateSearchQueries(topic: String) async throws -> [String] {
-        // Use real LLM to generate search queries
+    private func runLangGraphWorkflow() async throws -> [String: Any] {
+        // Get API keys
         let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
+        let tavilyApiKey = EnvironmentService.shared.getAPIKey(for: "TAVILY_API_KEY") ?? ""
+        
         guard !openaiApiKey.isEmpty else {
             throw APIError.missingKey("OpenAI API key not found. Please check your .env file.")
         }
         
-        return try await projectManager.pythonService.generateSearchQueries(topic: topic, apiKey: openaiApiKey)
-    }
-    
-    private func performTavilySearch(queries: [String], limit: Int) async throws -> [TavilyResult] {
-        // Use real Tavily API to search
-        let tavilyApiKey = EnvironmentService.shared.getAPIKey(for: "TAVILY_API_KEY") ?? ""
         guard !tavilyApiKey.isEmpty else {
             throw APIError.missingKey("Tavily API key not found. Please check your .env file.")
         }
         
-        let results = try await projectManager.pythonService.searchWithTavily(queries: queries, limit: limit, apiKey: tavilyApiKey)
-        
-        return results.map { resultDict in
-            TavilyResult(
-                title: resultDict["title"] as? String ?? "",
-                url: resultDict["url"] as? String ?? "",
-                content: resultDict["content"] as? String ?? "",
-                score: resultDict["score"] as? Double ?? 0.0,
-                publishedDate: resultDict["published_date"] as? String ?? ""
-            )
-        }
-    }
-    
-    private func filterByReliability(results: [TavilyResult]) async throws -> [TavilyResult] {
-        // Use real LLM to score reliability
-        let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
-        guard !openaiApiKey.isEmpty else {
-            throw APIError.missingKey("OpenAI API key not found. Please check your .env file.")
-        }
-        
-        // Convert to format expected by Python service
-        let resultDicts = results.map { result in
-            [
-                "title": result.title,
-                "url": result.url,
-                "content": result.content,
-                "score": result.score
-            ]
-        }
-        
+        // Convert source preferences to string array
         let sourcePrefs = projectConfig.sourcePreferences.map { $0.rawValue }
-        let scoredResults = try await projectManager.pythonService.scoreReliability(
-            results: resultDicts,
+        
+        // Call the LangGraph workflow through Python service
+        print("🔄 Calling LangGraph source collection workflow...")
+        let result = try await projectManager.pythonService.runSourceCollectionWorkflow(
+            topic: projectConfig.topic,
+            searchLimit: searchLimit,
+            reliabilityThreshold: reliabilityThreshold,
             sourcePreferences: sourcePrefs,
-            apiKey: openaiApiKey
+            openaiApiKey: openaiApiKey,
+            tavilyApiKey: tavilyApiKey
         )
         
-        // Convert back and apply threshold filtering
-        let threshold = calculateReliabilityThreshold()
-        
-        var filteredResults: [TavilyResult] = []
-        for scoredResult in scoredResults {
-            let score = scoredResult["reliabilityScore"] as? Int ?? 50
-            
-            if shouldIncludeResult(reliabilityScore: score, threshold: threshold) {
-                var result = TavilyResult(
-                    title: scoredResult["title"] as? String ?? "",
-                    url: scoredResult["url"] as? String ?? "",
-                    content: scoredResult["content"] as? String ?? "",
-                    score: scoredResult["score"] as? Double ?? 0.0,
-                    publishedDate: ""
-                )
-                result.reliabilityScore = Double(score)
-                filteredResults.append(result)
-            }
-        }
-        
-        return filteredResults
+        return result
     }
     
     private func calculateReliabilityThreshold() -> Double {
