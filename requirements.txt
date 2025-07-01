@@ -31,6 +31,7 @@ textstat==0.7.7
 # AI Services
 openai>=1.0.0
 tiktoken>=0.5.0
+tavily-python>=0.3.0
 
 # Data Processing & Analysis
 pandas>=2.1.0

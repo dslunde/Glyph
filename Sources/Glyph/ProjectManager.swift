@@ -14,11 +14,11 @@ class ProjectManager: ObservableObject {
     @Published var insights: [String] = []
     
     // Services
-    private let pythonService = PythonGraphService()
+    let pythonService = PythonGraphService()
     private let persistenceService = PersistenceService()
     
     // Error handling
-    @Published var errorMessage: String?
+    @Published var errorMessage: String = ""
     @Published var showingError = false
     
     private var cancellables: Set<AnyCancellable> = []
@@ -65,6 +65,38 @@ class ProjectManager: ObservableObject {
             sensitivityLevel: sensitivityLevel,
             isOnline: isOnlineMode
         )
+        projects.append(newProject)
+        selectedProject = newProject
+        saveProjects()
+        
+        // Initialize with sample graph data
+        Task {
+            await initializeSampleGraph(for: newProject)
+        }
+    }
+    
+    func createProjectWithCustomLearningPlan(name: String, description: String = "", topic: String = "",
+                      depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+                      filePaths: [String] = [], urls: [String] = [],
+                      hypotheses: String = "", controversialAspects: String = "",
+                      sensitivityLevel: SensitivityLevel = .medium, learningPlan: String) {
+        var newProject = Project(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: sourcePreferences,
+            filePaths: filePaths,
+            urls: urls,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel,
+            isOnline: isOnlineMode
+        )
+        
+        // Override the default learning plan with the custom one
+        newProject.learningPlan = learningPlan
+        
         projects.append(newProject)
         selectedProject = newProject
         saveProjects()
