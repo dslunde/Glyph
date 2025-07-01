@@ -11,13 +11,13 @@ Collecting openai
 Collecting tavily-python
   Downloading tavily_python-0.7.8-py3-none-any.whl.metadata (7.5 kB)
 Downloading numpy-2.3.1-cp313-cp313-macosx_14_0_arm64.whl (5.1 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.1/5.1 MB 46.2 MB/s eta 0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.1/5.1 MB 44.3 MB/s eta 0:00:00
 Downloading networkx-3.5-py3-none-any.whl (2.0 MB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 38.0 MB/s eta 0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.0/2.0 MB 95.4 MB/s eta 0:00:00
 Downloading requests-2.32.4-py3-none-any.whl (64 kB)
 Downloading python_dotenv-1.1.1-py3-none-any.whl (20 kB)
 Downloading openai-1.93.0-py3-none-any.whl (755 kB)
-   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 755.0/755.0 kB 81.0 MB/s eta 0:00:00
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 755.0/755.0 kB 98.2 MB/s eta 0:00:00
 Downloading tavily_python-0.7.8-py3-none-any.whl (15 kB)
 Installing collected packages: tavily-python, requests, python-dotenv, openai, numpy, networkx
 Successfully installed networkx-3.5 numpy-2.3.1 openai-1.93.0 python-dotenv-1.1.1 requests-2.32.4 tavily-python-0.7.8

@@ -12,65 +12,92 @@ class PythonGraphService: ObservableObject {
     private var python: PythonObject?
     private var sys: PythonObject?
     
+    // Static flag to ensure Python is configured only once
+    private static var pythonConfigured = false
+    
+    // TEMPORARY: Disable Python to prevent crashes
+    private static let pythonDisabled = true
+    
     init() {
-        // Configure embedded Python path before initialization
-        configureEmbeddedPython()
-        // Safely attempt to initialize Python
-        initializePython()
+        if Self.pythonDisabled {
+            // Skip Python initialization entirely
+            print("🚫 Python initialization disabled - using mock data only")
+            pythonAvailable = false
+            isInitialized = true // Mark as initialized so the app works
+            lastError = "Python disabled for stability"
+        } else {
+            // Ensure Python is configured before any initialization
+            Self.ensurePythonConfigured()
+            // Then attempt to initialize Python
+            initializePython()
+        }
     }
     
-    private func configureEmbeddedPython() {
+    static func ensurePythonConfigured() {
+        guard !pythonConfigured else { return }
+        pythonConfigured = true
+        
+        print("🐍 Configuring embedded Python (static)...")
+        
         // Get the app bundle path
         let bundlePath = Bundle.main.bundlePath
         
-        // Set up paths for embedded Python 3.13.3 (simplified structure)
+        // Set up paths for embedded Python 3.13.3
         let pythonPath = "\(bundlePath)/Contents/Python"
         let pythonExecutable = "\(pythonPath)/bin/python3.13"
-        let pythonLib = "\(pythonPath)/lib"
-        let pythonHome = pythonPath
+        let pythonLibraryPath = "\(pythonPath)/lib/libpython3.13.dylib"
         
-        print("🐍 Configuring embedded Python:")
         print("   📁 Bundle: \(bundlePath)")
-        print("   🏠 Python Home: \(pythonHome)")
-        print("   📂 Python Lib: \(pythonLib)")
-        print("   🔧 Python Executable: \(pythonExecutable)")
+        print("   🏠 Python Home: \(pythonPath)")
+        print("   📚 Python Library: \(pythonLibraryPath)")
         
-        // Set environment variables for PythonKit
-        setenv("PYTHONHOME", pythonHome, 1)
-        setenv("PYTHONPATH", pythonLib, 1)
-        
-        // Add Python lib to library path
-        let pythonLibPath = "\(pythonPath)/lib/python3.13"
-        let sitePackages = "\(pythonLibPath)/site-packages"
-        let combinedPath = "\(pythonLibPath):\(sitePackages)"
-        setenv("PYTHONPATH", combinedPath, 1)
-        
-        // Set the Python program name
-        if FileManager.default.fileExists(atPath: pythonExecutable) {
-            print("✅ Found embedded Python executable")
-            // Configure PythonKit to use our embedded Python
-            PythonLibrary.useLibrary(at: "\(pythonPath)/lib/libpython3.13.dylib")
+        // Check if embedded Python exists
+        let fileManager = FileManager.default
+        if fileManager.fileExists(atPath: pythonExecutable) && 
+           fileManager.fileExists(atPath: pythonLibraryPath) {
+            
+            print("✅ Found embedded Python files")
+            
+            // CRITICAL: Configure PythonKit to use embedded Python BEFORE any Python calls
+            PythonLibrary.useLibrary(at: pythonLibraryPath)
+            
+            // Set environment variables
+            setenv("PYTHONHOME", pythonPath, 1)
+            setenv("PYTHONEXECUTABLE", pythonExecutable, 1)
+            
+            let pythonLibPath = "\(pythonPath)/lib/python3.13"
+            let sitePackages = "\(pythonLibPath)/site-packages"
+            let combinedPath = "\(pythonLibPath):\(sitePackages)"
+            setenv("PYTHONPATH", combinedPath, 1)
+            
+            print("🔧 Embedded Python configured successfully")
         } else {
-            print("⚠️  Embedded Python executable not found at: \(pythonExecutable)")
+            print("⚠️  Embedded Python not found - using system Python")
+            print("   Missing: \(pythonExecutable) or \(pythonLibraryPath)")
         }
     }
     
+    private func configureEmbeddedPython() {
+        // This method is now deprecated - configuration happens statically
+        Self.ensurePythonConfigured()
+    }
+    
     private func initializePython() {
-        // Try to access Python library first - this can fail at runtime
-        guard let pythonLib = try? Python.library else {
-            pythonAvailable = false
-            isInitialized = false
-            lastError = "Python library not accessible"
-            print("⚠️ Python library not accessible")
-            print("💡 App will continue with mock data and reduced functionality")
-            return
-        }
+        print("🐍 Attempting to initialize Python...")
         
-        guard let sysModule = try? Python.import("sys") else {
+        // Try to access Python library - this should now use embedded Python
+        let pythonLib: PythonObject
+        let sysModule: PythonObject
+        
+        do {
+            // This should now use our embedded Python
+            pythonLib = Python.library
+            sysModule = Python.import("sys")
+        } catch {
             pythonAvailable = false
             isInitialized = false
-            lastError = "Could not import sys module"
-            print("⚠️ Could not import sys module")
+            lastError = "Python library not accessible: \(error.localizedDescription)"
+            print("⚠️ Python library not accessible: \(error)")
             print("💡 App will continue with mock data and reduced functionality")
             return
         }
@@ -86,29 +113,32 @@ class PythonGraphService: ObservableObject {
         print("   Executable: \(sysModule.executable)")
         print("   Path: \(sysModule.path)")
         
-        // Try to import required modules
-        if let numpy = try? pythonLib.import("numpy"),
-           let networkx = try? pythonLib.import("networkx") {
-            _ = try? pythonLib.import("json")
-            
-            print("✅ Python modules loaded successfully")
-            print("📊 NumPy version: \(numpy.__version__)")
-            print("🕸️ NetworkX version: \(networkx.__version__)")
-            
-            isInitialized = true
-            lastError = nil
-        } else {
-            print("⚠️ Some Python modules failed to load")
-            print("💡 App will continue with reduced functionality")
-            isInitialized = false
-            lastError = "Some Python modules not available"
-        }
+        // Simplified module loading - just try the basics
+        print("📦 Testing core Python modules...")
+        
+        // Test numpy
+        _ = pythonLib.import("numpy")
+        print("📊 NumPy import completed")
+        
+        // Test networkx  
+        _ = pythonLib.import("networkx")
+        print("🕸️ NetworkX import completed")
+        
+        // Test json
+        _ = pythonLib.import("json")
+        print("📋 JSON import completed")
+        
+        print("✅ Python initialization completed")
+        isInitialized = true
+        lastError = nil
     }
     
     // MARK: - Python Status Check
     
     func checkPythonStatus() -> String {
-        if pythonAvailable && isInitialized {
+        if Self.pythonDisabled {
+            return "Python disabled - using mock data mode"
+        } else if pythonAvailable && isInitialized {
             return "Python is available and initialized"
         } else if pythonAvailable {
             return "Python is available but not fully initialized"
