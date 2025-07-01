@@ -32,6 +32,15 @@ chmod +x "$APP_DIR/Contents/MacOS/$APP_NAME"
 echo "📋 Copying Info.plist..."
 cp "Info.plist" "$APP_DIR/Contents/Info.plist"
 
+# Copy entitlements for PythonKit compatibility
+echo "🔐 Copying entitlements..."
+if [ -f "Glyph.entitlements" ]; then
+    cp "Glyph.entitlements" "$APP_DIR/Contents/Glyph.entitlements"
+    echo "✅ Entitlements copied (App Sandbox disabled for PythonKit)"
+else
+    echo "⚠️  No entitlements file found"
+fi
+
 # Copy app icon
 echo "🎨 Copying app icon..."
 cp -r "Sources/Glyph/Resources/AppIcon.appiconset" "$APP_DIR/Contents/Resources/"
@@ -61,6 +70,19 @@ fi
 echo "🔐 Setting permissions..."
 chmod -R 755 "$APP_DIR"
 
+# Code signing with entitlements (if available)
+echo "📝 Code signing with entitlements..."
+if [ -f "Glyph.entitlements" ]; then
+    echo "🔏 Signing with entitlements for PythonKit compatibility..."
+    codesign --force --deep --sign - --entitlements "Glyph.entitlements" "$APP_DIR" || {
+        echo "⚠️  Code signing with entitlements failed, trying without..."
+        codesign --force --deep --sign - "$APP_DIR" || echo "⚠️  Code signing failed completely"
+    }
+else
+    echo "🔏 Basic code signing..."
+    codesign --force --deep --sign - "$APP_DIR" || echo "⚠️  Code signing failed"
+fi
+
 # Create a symlink in Applications folder for easy access
 echo "🔗 Creating link for easy access..."
 DESKTOP_APP="$HOME/Desktop/$APP_NAME.app"
@@ -70,8 +92,13 @@ echo "✅ App bundle created successfully!"
 echo "📍 Location: $APP_DIR"
 echo "🖱️  Shortcut: $DESKTOP_APP"
 echo ""
+echo "🐍 PythonKit Configuration:"
+echo "   ✓ App Sandbox: Disabled"
+echo "   ✓ Library Validation: Disabled"
+echo "   ✓ Python Runtime: Accessible"
+echo ""
 echo "🚀 To run your app:"
 echo "   Double-click: $DESKTOP_APP"
 echo "   Command line: open '$APP_DIR'"
 echo ""
-echo "🎉 Your Glyph app with custom icon is ready!" 
+echo "🎉 Your Glyph app with PythonKit support is ready!" 

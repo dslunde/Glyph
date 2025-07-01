@@ -132,3 +132,40 @@ Glyph is designed to be the ultimate research companion. We welcome contribution
 ---
 
 *Transform your research. Visualize knowledge. Accelerate learning.*
+
+## 🚀 Latest Updates
+
+### ✅ Source Collection with Real API Integration
+We've successfully implemented the complete Source Collection workflow from PRD section 2.2.2:
+
+- **Real Tavily API Integration**: Actual web search capabilities 
+- **OpenAI LLM Integration**: Intelligent query generation and reliability scoring
+- **Interactive Source Validation**: Real-time file/URL validation with visual status
+- **Smart Filtering**: Source preference-based reliability thresholds
+- **Streamlined Workflow**: Use/Drop approval system for search results
+
+### 🔧 PythonKit Configuration
+Fixed Swift concurrency issues and enabled PythonKit compatibility:
+
+- **App Sandbox**: Disabled for Python runtime access
+- **Library Validation**: Disabled for dynamic Python libraries
+- **Entitlements**: Properly configured for development and distribution
+- **Build System**: Automated bundle creation with proper code signing
+
+### 📋 API Setup Required
+To use the full functionality, you'll need:
+
+1. **Copy `.env.sample` to `.env`**
+2. **Add your API keys:**
+   - `OPENAI_API_KEY`: Get from https://platform.openai.com/api-keys
+   - `TAVILY_API_KEY`: Get from https://tavily.com/
+3. **Optional LangSmith**: For AI operation tracing and debugging
+
+### 🎯 Current Status
+- ✅ **Flow Fixed**: Source Collection properly displays on "Create"
+- ✅ **Real APIs**: Tavily and OpenAI integration implemented
+- ✅ **PythonKit**: Swift concurrency issues resolved
+- ✅ **App Bundle**: Builds successfully with proper entitlements
+- 🚧 **Next**: Full API testing with real keys
+
+**Ready for real-world testing!**
