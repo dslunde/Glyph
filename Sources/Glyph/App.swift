@@ -4,9 +4,9 @@ import AppKit
 @main
 struct GlyphApp: App {
     init() {
-        // Python configuration temporarily disabled for stability
-        // PythonGraphService.ensurePythonConfigured()
-        print("🚀 Glyph starting with mock data mode")
+        // Initialize Python configuration and environment services
+        PythonGraphService.ensurePythonConfigured()
+        print("🚀 Glyph starting with API configuration")
     }
     
     var body: some Scene {
