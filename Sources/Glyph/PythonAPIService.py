@@ -35,13 +35,13 @@ except ImportError:
 
 # LangSmith tracing
 try:
-    from langsmith import traceable
+    from langsmith import traceable  # type: ignore
     LANGSMITH_AVAILABLE = True
     print("✅ LangSmith tracing available")
 except ImportError:
     print("⚠️ LangSmith not available - operations will not be traced")
     LANGSMITH_AVAILABLE = False
-    def traceable(name: str = None):
+    def traceable(name: Optional[str] = None):  # type: ignore
         def decorator(func):
             return func
         return decorator
@@ -115,11 +115,12 @@ def setup_langsmith() -> bool:
 def handle_api_error(service: str, error: Exception) -> APIError:
     """Convert various exceptions into standardized APIError"""
     if hasattr(error, 'status_code'):
-        if error.status_code == 429:
+        status_code = getattr(error, 'status_code')
+        if status_code == 429:
             retry_after = getattr(error, 'retry_after', None)
             return RateLimitError(service, retry_after)
         else:
-            return APIError(service, str(error), error.status_code)
+            return APIError(service, str(error), status_code)
     elif "network" in str(error).lower() or "connection" in str(error).lower():
         return NetworkError(service, f"Network error: {str(error)}")
     else:
@@ -127,7 +128,7 @@ def handle_api_error(service: str, error: Exception) -> APIError:
 
 
 @traceable(name="generate_search_queries_real")
-def generate_search_queries(topic: str, api_key: str) -> Dict[str, Union[List[str], str]]:
+def generate_search_queries(topic: str, api_key: str) -> Dict[str, Union[List[str], str, bool]]:
     """
     Generate search queries using OpenAI API with comprehensive error handling
     
@@ -232,7 +233,7 @@ Return only the queries, one per line, without numbering."""
 
 
 @traceable(name="search_with_tavily_real")
-def search_with_tavily(queries: List[str], limit: int, api_key: str) -> Dict[str, Union[List[Dict], str, bool]]:
+def search_with_tavily(queries: List[str], limit: int, api_key: str) -> Dict[str, Union[List[Dict[str, Any]], str, bool]]:
     """
     Search using Tavily API with comprehensive error handling
     
@@ -322,7 +323,7 @@ def search_with_tavily(queries: List[str], limit: int, api_key: str) -> Dict[str
 
 
 @traceable(name="score_reliability_real")
-def score_reliability(results: List[Dict[str, Any]], source_preferences: List[str], api_key: str) -> Dict[str, Union[List[Dict], str, bool]]:
+def score_reliability(results: List[Dict[str, Any]], source_preferences: List[str], api_key: str) -> Dict[str, Union[List[Dict[str, Any]], str, bool]]:
     """
     Score reliability using OpenAI API with comprehensive error handling
     
@@ -507,19 +508,29 @@ def test_api_integration():
     print("\n🤖 Testing query generation...")
     query_result = generate_search_queries("machine learning", openai_key or "")
     print(f"Success: {query_result['success']}")
-    print(f"Queries: {len(query_result['queries'])}")
+    if isinstance(query_result['queries'], list):
+        print(f"Queries: {len(query_result['queries'])}")
+    else:
+        print("Queries: Error occurred")
     
     # Test search
     print("\n🔍 Testing search...")
-    search_result = search_with_tavily(query_result['queries'][:2], 3, tavily_key or "")
-    print(f"Success: {search_result['success']}")
-    print(f"Results: {len(search_result['results'])}")
-    
-    # Test scoring
-    print("\n🎯 Testing reliability scoring...")
-    score_result = score_reliability(search_result['results'], ["reliable"], openai_key or "")
-    print(f"Success: {score_result['success']}")
-    print(f"Scored: {len(score_result['results'])}")
+    if isinstance(query_result['queries'], list):
+        search_result = search_with_tavily(query_result['queries'][:2], 3, tavily_key or "")
+        print(f"Success: {search_result['success']}")
+        if isinstance(search_result['results'], list):
+            print(f"Results: {len(search_result['results'])}")
+            
+            # Test scoring
+            print("\n🎯 Testing reliability scoring...")
+            score_result = score_reliability(search_result['results'], ["reliable"], openai_key or "")
+            print(f"Success: {score_result['success']}")
+            if isinstance(score_result['results'], list):
+                print(f"Scored: {len(score_result['results'])}")
+        else:
+            print("Results: Error occurred")
+    else:
+        print("Query generation failed")
     
     print("\n✅ API integration test complete!")
 

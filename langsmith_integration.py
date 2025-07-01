@@ -24,7 +24,7 @@ from datetime import datetime
 
 # Check if LangSmith is available
 try:
-    from langsmith import traceable
+    from langsmith import traceable  # type: ignore
     from langchain_core.tracers.langchain import LangChainTracer
     LANGSMITH_AVAILABLE = True
     print("✅ LangSmith module available")
