@@ -319,8 +319,13 @@ class PythonGraphService: ObservableObject {
         ]
     }
     
-    // MARK: - API Integration with Fallbacks
+    // MARK: - API Integration with Fallbacks (DEPRECATED - Use LangGraph Workflow)
     
+    /// ⚠️ WARNING: These methods are deprecated. Use runSourceCollectionWorkflow() for the new LangGraph-based system.
+    /// The individual API methods below provide sequential processing but lack the robust state management,
+    /// error recovery, and observability of the LangGraph workflow system.
+    
+    @available(*, deprecated, message: "Use runSourceCollectionWorkflow() instead for LangGraph-based orchestration")
     func searchWithTavily(queries: [String], limit: Int = 5, apiKey: String) async throws -> [[String: Any]] {
         guard isInitialized else {
             throw APIError.networkError("Python not initialized")
@@ -381,6 +386,7 @@ class PythonGraphService: ObservableObject {
         return results
     }
     
+    @available(*, deprecated, message: "Use runSourceCollectionWorkflow() instead for LangGraph-based orchestration")
     func generateSearchQueries(topic: String, apiKey: String) async throws -> [String] {
         guard isInitialized else {
             throw APIError.networkError("Python not initialized")
@@ -425,6 +431,7 @@ class PythonGraphService: ObservableObject {
         }
     }
     
+    @available(*, deprecated, message: "Use runSourceCollectionWorkflow() instead for LangGraph-based orchestration")
     func scoreReliability(results: [[String: Any]], sourcePreferences: [String], apiKey: String) async throws -> [[String: Any]] {
         guard isInitialized else {
             throw APIError.networkError("Python not initialized")
@@ -488,7 +495,10 @@ class PythonGraphService: ObservableObject {
         }
     }
     
-    // MARK: - LangGraph Workflow Integration
+    // MARK: - LangGraph Workflow Integration (PRIMARY API)
+    
+    /// Primary method for source collection using LangGraph state machine orchestration.
+    /// This replaces the deprecated individual API methods with a comprehensive workflow.
     
     func runSourceCollectionWorkflow(
         topic: String,

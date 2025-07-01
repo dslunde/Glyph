@@ -126,7 +126,7 @@ def handle_api_error(service: str, error: Exception) -> APIError:
         return APIError(service, str(error))
 
 
-@traceable(name="generate_search_queries_real")
+@traceable(name="generate_search_queries_deprecated")
 def generate_search_queries(topic: str, api_key: str) -> Dict[str, Union[List[str], str, bool]]:
     """
     Generate search queries using OpenAI API with comprehensive error handling

@@ -50,8 +50,20 @@ try:
 except ImportError:
     print("⚠️ LangSmith not available - operations will not be traced")
     LANGSMITH_AVAILABLE = False
-    def traceable(name=None):
-        def decorator(func):
+    from typing import Callable, TypeVar
+    
+    F = TypeVar('F', bound=Callable[..., Any])
+    
+    def traceable(name: Optional[str] = None) -> Callable[[F], F]:
+        """Fallback traceable decorator when LangSmith is not available.
+        
+        Args:
+            name: Optional name for the traced function (ignored in fallback).
+            
+        Returns:
+            Decorator function that returns the original function unchanged.
+        """
+        def decorator(func: F) -> F:
             return func
         return decorator
 
@@ -125,7 +137,17 @@ class SourceCollectionState(TypedDict):
 
 @traceable(name="initialize_workflow")
 def initialize_node(state: SourceCollectionState) -> SourceCollectionState:
-    """Initialize the workflow and validate inputs"""
+    """Initialize the workflow and validate inputs.
+    
+    Args:
+        state: The current workflow state containing input parameters and configuration.
+        
+    Returns:
+        Updated state with initialization data, validation results, and setup metadata.
+        
+    Note:
+        Sets up initial workflow state, validates API keys, and prepares tracing messages.
+    """
     print(f"🚀 Initializing source collection for topic: '{state['topic']}'")
     
     # Update state

@@ -938,7 +938,12 @@ struct SourceCollectionView: View {
             ]
             await langSmith.logAPIKeyValidation(runId: runId, keys: apiKeysValid)
             
-            // Run LangGraph workflow instead of sequential steps
+            // Run LangGraph workflow (PRIMARY APPROACH)
+            // This replaces the old sequential API calls with a state machine that provides:
+            // - Robust error handling and recovery
+            // - Comprehensive LangSmith tracing
+            // - State-based progress tracking
+            // - Automatic fallback strategies
             print("🚀 Starting LangGraph source collection workflow...")
             let workflowResult = try await runLangGraphWorkflow()
             
@@ -1063,32 +1068,9 @@ struct SourceCollectionView: View {
         return result
     }
     
-    private func calculateReliabilityThreshold() -> Double {
-        let hasReliable = projectConfig.sourcePreferences.contains(.reliable)
-        let hasUnreliable = projectConfig.sourcePreferences.contains(.unreliable)
-        
-        if hasReliable && !hasUnreliable {
-            return 60.0 // >= 60%
-        } else if !hasReliable && hasUnreliable {
-            return 40.0 // <= 40%
-        } else {
-            return 0.0 // Accept all
-        }
-    }
-    
-    private func shouldIncludeResult(reliabilityScore: Int, threshold: Double) -> Bool {
-        let hasReliable = projectConfig.sourcePreferences.contains(.reliable)
-        let hasUnreliable = projectConfig.sourcePreferences.contains(.unreliable)
-        
-        if hasReliable && !hasUnreliable {
-            return Double(reliabilityScore) >= threshold
-        } else if !hasReliable && hasUnreliable {
-            return Double(reliabilityScore) <= threshold
-        } else {
-            // Both or neither - accept if >= 60% or <= 40%
-            return Double(reliabilityScore) >= 60.0 || Double(reliabilityScore) <= 40.0
-        }
-    }
+    // MARK: - Deprecated Helper Methods (No longer used with LangGraph workflow)
+    // These methods were used by the old sequential processing approach.
+    // The LangGraph workflow handles filtering logic internally.
     
     private func streamResults(_ results: [TavilyResult]) async {
         // Convert to SearchResult and stream them
