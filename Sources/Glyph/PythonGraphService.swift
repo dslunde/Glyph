@@ -7,34 +7,113 @@ class PythonGraphService: ObservableObject {
     @Published var isInitialized = false
     @Published var isOnlineMode = true
     @Published var lastError: String?
+    @Published var pythonAvailable = false
     
-    private let python: PythonObject
-    private let sys: PythonObject
+    private var python: PythonObject?
+    private var sys: PythonObject?
     
     init() {
-        // Initialize Python
-        python = Python.library
-        sys = Python.import("sys")
-        
-        // Initialize synchronously to avoid concurrency issues
+        // Configure embedded Python path before initialization
+        configureEmbeddedPython()
+        // Safely attempt to initialize Python
         initializePython()
     }
     
+    private func configureEmbeddedPython() {
+        // Get the app bundle path
+        let bundlePath = Bundle.main.bundlePath
+        
+        // Set up paths for embedded Python 3.13.3 (simplified structure)
+        let pythonPath = "\(bundlePath)/Contents/Python"
+        let pythonExecutable = "\(pythonPath)/bin/python3.13"
+        let pythonLib = "\(pythonPath)/lib"
+        let pythonHome = pythonPath
+        
+        print("🐍 Configuring embedded Python:")
+        print("   📁 Bundle: \(bundlePath)")
+        print("   🏠 Python Home: \(pythonHome)")
+        print("   📂 Python Lib: \(pythonLib)")
+        print("   🔧 Python Executable: \(pythonExecutable)")
+        
+        // Set environment variables for PythonKit
+        setenv("PYTHONHOME", pythonHome, 1)
+        setenv("PYTHONPATH", pythonLib, 1)
+        
+        // Add Python lib to library path
+        let pythonLibPath = "\(pythonPath)/lib/python3.13"
+        let sitePackages = "\(pythonLibPath)/site-packages"
+        let combinedPath = "\(pythonLibPath):\(sitePackages)"
+        setenv("PYTHONPATH", combinedPath, 1)
+        
+        // Set the Python program name
+        if FileManager.default.fileExists(atPath: pythonExecutable) {
+            print("✅ Found embedded Python executable")
+            // Configure PythonKit to use our embedded Python
+            PythonLibrary.useLibrary(at: "\(pythonPath)/lib/libpython3.13.dylib")
+        } else {
+            print("⚠️  Embedded Python executable not found at: \(pythonExecutable)")
+        }
+    }
+    
     private func initializePython() {
-        do {
-            // Import required modules
-            let numpy = python.import("numpy")
-            let networkx = python.import("networkx")
-            _ = python.import("json")
+        // Try to access Python library first - this can fail at runtime
+        guard let pythonLib = try? Python.library else {
+            pythonAvailable = false
+            isInitialized = false
+            lastError = "Python library not accessible"
+            print("⚠️ Python library not accessible")
+            print("💡 App will continue with mock data and reduced functionality")
+            return
+        }
+        
+        guard let sysModule = try? Python.import("sys") else {
+            pythonAvailable = false
+            isInitialized = false
+            lastError = "Could not import sys module"
+            print("⚠️ Could not import sys module")
+            print("💡 App will continue with mock data and reduced functionality")
+            return
+        }
+        
+        // If we get here, Python is available
+        self.python = pythonLib
+        self.sys = sysModule  
+        self.pythonAvailable = true
+        
+        // Print Python configuration info
+        print("🐍 Python initialized successfully:")
+        print("   Version: \(sysModule.version)")
+        print("   Executable: \(sysModule.executable)")
+        print("   Path: \(sysModule.path)")
+        
+        // Try to import required modules
+        if let numpy = try? pythonLib.import("numpy"),
+           let networkx = try? pythonLib.import("networkx") {
+            _ = try? pythonLib.import("json")
             
-            print("Python modules loaded successfully")
-            print("NumPy version: \(numpy.__version__)")
-            print("NetworkX version: \(networkx.__version__)")
+            print("✅ Python modules loaded successfully")
+            print("📊 NumPy version: \(numpy.__version__)")
+            print("🕸️ NetworkX version: \(networkx.__version__)")
             
             isInitialized = true
-        } catch {
-            lastError = "Failed to initialize Python: \(error)"
-            print(lastError!)
+            lastError = nil
+        } else {
+            print("⚠️ Some Python modules failed to load")
+            print("💡 App will continue with reduced functionality")
+            isInitialized = false
+            lastError = "Some Python modules not available"
+        }
+    }
+    
+    // MARK: - Python Status Check
+    
+    func checkPythonStatus() -> String {
+        if pythonAvailable && isInitialized {
+            return "Python is available and initialized"
+        } else if pythonAvailable {
+            return "Python is available but not fully initialized"
+        } else {
+            return "Python is not available - using mock data mode"
         }
     }
     
@@ -190,15 +269,18 @@ class PythonGraphService: ObservableObject {
     // MARK: - Dependency Check
     
     func checkPythonDependencies() -> [String: Bool] {
+        guard let python = python else {
+            return ["python": false]
+        }
+        
         var status: [String: Bool] = [:]
         
         let modules = ["numpy", "networkx", "tavily", "openai", "json"]
         
         for module in modules {
-            do {
-                _ = python.import(module)
+            if let _ = try? python.import(module) {
                 status[module] = true
-            } catch {
+            } else {
                 status[module] = false
             }
         }

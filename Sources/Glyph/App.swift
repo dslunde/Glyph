@@ -3,161 +3,162 @@ import AppKit
 
 @main
 struct GlyphApp: App {
-    @StateObject private var projectManager = ProjectManager()
-    @StateObject private var authManager = AuthenticationManager()
-    
     var body: some Scene {
         WindowGroup {
+            ContentView()
+        }
+    }
+}
+
+struct ContentView: View {
+    @StateObject private var projectManager = ProjectManager()
+    @StateObject private var authManager = AuthenticationManager()
+    @StateObject private var environmentService = EnvironmentService.shared
+    
+    var body: some View {
+        Group {
             if authManager.isAuthenticated {
                 NavigationSplitView {
-                // Sidebar with project list
-                VStack(alignment: .leading, spacing: 0) {
-                    // Header
-                    HStack {
-                        Image(systemName: "sparkles")
-                            .font(.title2)
-                            .foregroundColor(.purple)
-                        Text("Glyph")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                        Spacer()
-                        
-                        // Online/Offline indicator
-                        HStack(spacing: 4) {
-                            Circle()
-                                .fill(projectManager.isOnlineMode ? Color.green : Color.orange)
-                                .frame(width: 8, height: 8)
-                            Text(projectManager.isOnlineMode ? "Online" : "Offline")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                    }
-                    .padding()
-                    .background(Color(nsColor: .controlBackgroundColor))
-                    
-                    Divider()
-                    
-                    // Project List
-                    List(selection: $projectManager.selectedProject) {
-                        ForEach(projectManager.projects) { project in
-                            ProjectRowView(project: project)
-                                .tag(project)
-                                .contextMenu {
-                                    Button("Delete Project", role: .destructive) {
-                                        projectManager.deleteProject(project)
-                                    }
-                                }
-                        }
-                        .onDelete(perform: deleteProjects)
-                    }
-                    .listStyle(SidebarListStyle())
-                    .navigationTitle("")
-                    .onKeyPress(.delete) {
-                        if let selectedProject = projectManager.selectedProject {
-                            projectManager.deleteProject(selectedProject)
-                            return .handled
-                        }
-                        return .ignored
-                    }
-                    
-                    Divider()
-                    
-                    // Controls
-                    VStack(spacing: 8) {
-                        Button(action: {
-                            projectManager.showingCreateProject = true
-                        }) {
-                            HStack {
-                                Image(systemName: "plus")
-                                Text("New Project")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        Button(action: {
-                            projectManager.toggleOnlineMode()
-                        }) {
-                            HStack {
-                                Image(systemName: projectManager.isOnlineMode ? "wifi" : "wifi.slash")
-                                Text(projectManager.isOnlineMode ? "Go Offline" : "Go Online")
-                            }
-                            .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    .padding()
-                }
-                .frame(minWidth: 250)
-                
-            } detail: {
-                // Main content area
-                if let selectedProject = projectManager.selectedProject {
-                    ProjectDetailView(project: selectedProject)
-                        .environmentObject(projectManager)
-                        .environmentObject(authManager)
-                } else {
-                    // Welcome screen
-                    VStack(spacing: 20) {
-                        Image(systemName: "sparkles")
-                            .font(.system(size: 60))
-                            .foregroundColor(.purple)
-                        
-                        VStack(spacing: 8) {
-                            Text("Welcome to Glyph")
-                                .font(.largeTitle)
+                    // Sidebar
+                    VStack {
+                        // Header with New Project button
+                        HStack {
+                            Text("Glyph")
+                                .font(.title2)
                                 .fontWeight(.bold)
                             
-                            Text("Knowledge Graph Explorer")
-                                .font(.title2)
-                                .foregroundColor(.secondary)
+                            Spacer()
+                            
+                            Button(action: {
+                                projectManager.showingCreateProject = true
+                            }) {
+                                Image(systemName: "plus")
+                                    .font(.title2)
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .help("Create New Project")
                         }
+                        .padding()
                         
-                        VStack(spacing: 12) {
-                            Text("Create your first project to start exploring connections")
-                                .multilineTextAlignment(.center)
+                        // Configuration Status
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack {
+                                Image(systemName: environmentService.isFullyConfigured ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                                    .foregroundColor(environmentService.isFullyConfigured ? .green : .orange)
+                                Text("API Configuration")
+                                    .font(.caption)
+                                    .fontWeight(.medium)
+                            }
+                            
+                            Text(environmentService.configurationMessage)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.leading)
+                        }
+                        .padding(.horizontal)
+                        .padding(.bottom, 8)
+                        
+                        Divider()
+                        
+                        // Projects List
+                        List(selection: $projectManager.selectedProject) {
+                            ForEach(projectManager.projects, id: \.id) { project in
+                                ProjectRowView(project: project)
+                                    .tag(project)
+                                    .contextMenu {
+                                        Button("Delete", role: .destructive) {
+                                            projectManager.deleteProject(project)
+                                        }
+                                    }
+                            }
+                            .onDelete(perform: deleteProjects)
+                        }
+                        .listStyle(SidebarListStyle())
+                        
+                        Spacer()
+                        
+                        // Mode Toggle
+                        HStack {
+                            Text(projectManager.isOnlineMode ? "Online" : "Offline")
+                                .font(.caption)
+                                .foregroundColor(projectManager.isOnlineMode ? .green : .orange)
+                            
+                            Spacer()
+                            
+                            Button(action: {
+                                projectManager.toggleOnlineMode()
+                            }) {
+                                Image(systemName: projectManager.isOnlineMode ? "wifi" : "wifi.slash")
+                                    .foregroundColor(projectManager.isOnlineMode ? .green : .orange)
+                            }
+                            .buttonStyle(.plain)
+                            .help("Toggle Online/Offline Mode")
+                        }
+                        .padding()
+                    }
+                    .frame(minWidth: 250)
+                    
+                } detail: {
+                    // Main Content
+                    if let selectedProject = projectManager.selectedProject {
+                        ProjectDetailView(project: selectedProject)
+                            .environmentObject(projectManager)
+                    } else {
+                        // Welcome View
+                        VStack {
+                            Image(systemName: "network")
+                                .font(.system(size: 64))
                                 .foregroundColor(.secondary)
                             
-                            Button("Create Project") {
+                            Text("Welcome to Glyph")
+                                .font(.title)
+                                .fontWeight(.bold)
+                                .padding(.top)
+                            
+                            Text("Create a project to start building knowledge graphs")
+                                .font(.body)
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding()
+                            
+                            Button("Create New Project") {
                                 projectManager.showingCreateProject = true
                             }
                             .buttonStyle(.borderedProminent)
-                            .controlSize(.large)
-                        }
-                        
-                        HStack {
-                            Text("Logged in as \(authManager.currentUser ?? "Unknown")")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                            .padding()
                             
-                            Button("Logout") {
-                                authManager.logout()
-                            }
-                            .font(.caption)
-                        }
-                        
-                        if projectManager.isPythonInitialized {
-                            HStack {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundColor(.green)
-                                Text("Python integration ready")
+                            // Configuration guidance
+                            if !environmentService.isFullyConfigured {
+                                VStack(spacing: 8) {
+                                    HStack {
+                                        Image(systemName: "info.circle")
+                                            .foregroundColor(.blue)
+                                        Text("API Configuration Required")
+                                            .font(.headline)
+                                    }
+                                    
+                                    Text("To use search features, configure your API keys:")
+                                        .font(.body)
+                                        .multilineTextAlignment(.center)
+                                    
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text("1. Copy `.env.sample` to `.env`")
+                                        Text("2. Add your OpenAI API key")
+                                        Text("3. Add your Tavily API key")
+                                        Text("4. Restart the application")
+                                    }
                                     .font(.caption)
                                     .foregroundColor(.secondary)
-                            }
-                        } else {
-                            HStack {
-                                Image(systemName: "exclamationmark.triangle.fill")
-                                    .foregroundColor(.orange)
-                                Text("Python integration initializing...")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                                }
+                                .padding()
+                                .background(Color.blue.opacity(0.1))
+                                .cornerRadius(8)
+                                .padding()
                             }
                         }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(nsColor: .textBackgroundColor))
                 }
-            }
                 .sheet(isPresented: $projectManager.showingCreateProject) {
                     CreateProjectView()
                         .environmentObject(projectManager)
@@ -172,6 +173,10 @@ struct GlyphApp: App {
                 LoginView()
                     .environmentObject(authManager)
             }
+        }
+        .onAppear {
+            // Reload environment configuration on app launch
+            environmentService.reloadConfiguration()
         }
     }
     
@@ -936,9 +941,9 @@ struct SourceCollectionView: View {
     
     private func generateSearchQueries(topic: String) async throws -> [String] {
         // Use real LLM to generate search queries
-        let openaiApiKey = getAPIKey(for: "OPENAI_API_KEY") ?? ""
+        let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
         guard !openaiApiKey.isEmpty else {
-            throw APIError.missingKey("OpenAI API key not found")
+            throw APIError.missingKey("OpenAI API key not found. Please check your .env file.")
         }
         
         return try await projectManager.pythonService.generateSearchQueries(topic: topic, apiKey: openaiApiKey)
@@ -946,9 +951,9 @@ struct SourceCollectionView: View {
     
     private func performTavilySearch(queries: [String], limit: Int) async throws -> [TavilyResult] {
         // Use real Tavily API to search
-        let tavilyApiKey = getAPIKey(for: "TAVILY_API_KEY") ?? ""
+        let tavilyApiKey = EnvironmentService.shared.getAPIKey(for: "TAVILY_API_KEY") ?? ""
         guard !tavilyApiKey.isEmpty else {
-            throw APIError.missingKey("Tavily API key not found")
+            throw APIError.missingKey("Tavily API key not found. Please check your .env file.")
         }
         
         let results = try await projectManager.pythonService.searchWithTavily(queries: queries, limit: limit, apiKey: tavilyApiKey)
@@ -966,9 +971,9 @@ struct SourceCollectionView: View {
     
     private func filterByReliability(results: [TavilyResult]) async throws -> [TavilyResult] {
         // Use real LLM to score reliability
-        let openaiApiKey = getAPIKey(for: "OPENAI_API_KEY") ?? ""
+        let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
         guard !openaiApiKey.isEmpty else {
-            throw APIError.missingKey("OpenAI API key not found")
+            throw APIError.missingKey("OpenAI API key not found. Please check your .env file.")
         }
         
         // Convert to format expected by Python service
@@ -1079,16 +1084,6 @@ struct SourceCollectionView: View {
             return formatter.string(from: Date())
         }
         return dateString
-    }
-    
-    private func getAPIKey(for key: String) -> String? {
-        // Try environment variables first
-        if let envKey = ProcessInfo.processInfo.environment[key] {
-            return envKey
-        }
-        
-        // Fallback to UserDefaults for testing
-        return UserDefaults.standard.string(forKey: key)
     }
     
     private func handleSearchResultAction(result: SearchResult, action: SearchResultAction) {

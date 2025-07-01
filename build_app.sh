@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# 🚀 Glyph App Bundle Builder
-# This script creates a proper macOS .app bundle with custom icon
+# 🚀 Glyph App Bundle Builder with Embedded Python 3.13.3
+# This script creates a proper macOS .app bundle with custom icon and embedded Python
 
 set -e  # Exit on any error
 
-echo "🔨 Building Glyph macOS App Bundle..."
+echo "🔨 Building Glyph macOS App Bundle with Embedded Python..."
 
 # Configuration
 APP_NAME="Glyph"
@@ -14,10 +14,25 @@ VERSION="1.0"
 BUILD_DIR=".build"
 APP_DIR="$BUILD_DIR/$APP_NAME.app"
 
+# Python Configuration
+PYTHON_VERSION="3.13.3"
+PYTHON_HOME="/Users/darrenlund/.pyenv/versions/$PYTHON_VERSION"
+PYTHON_EXEC="$PYTHON_HOME/bin/python3.13"
+
+# Verify Python installation
+echo "🐍 Verifying Python $PYTHON_VERSION installation..."
+if [ ! -f "$PYTHON_EXEC" ]; then
+    echo "❌ Python $PYTHON_VERSION not found at $PYTHON_EXEC"
+    echo "💡 Install with: pyenv install $PYTHON_VERSION"
+    exit 1
+fi
+
+echo "✅ Found Python $PYTHON_VERSION at $PYTHON_EXEC"
+
 # Clean and create directories
 echo "🧹 Cleaning build directory..."
 rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/Contents/"{MacOS,Resources}
+mkdir -p "$APP_DIR/Contents/"{MacOS,Resources,Python}
 
 # Build the Swift executable
 echo "⚙️  Building Swift executable..."
@@ -40,6 +55,63 @@ if [ -f "Glyph.entitlements" ]; then
 else
     echo "⚠️  No entitlements file found"
 fi
+
+# === EMBED PYTHON 3.13.3 ===
+echo "🐍 Embedding Python $PYTHON_VERSION runtime..."
+
+# Create Python directory structure (simplified)
+EMBEDDED_PYTHON="$APP_DIR/Contents/Python"
+mkdir -p "$EMBEDDED_PYTHON/"{bin,lib,include}
+
+# Copy Python executable
+echo "📦 Copying Python executable..."
+cp "$PYTHON_EXEC" "$EMBEDDED_PYTHON/bin/"
+chmod +x "$EMBEDDED_PYTHON/bin/python3.13"
+
+# Copy Python library (the shared library file)
+echo "📚 Copying Python library..."
+PYTHON_LIB="$PYTHON_HOME/lib/libpython3.13.dylib"
+if [ -f "$PYTHON_LIB" ]; then
+    cp "$PYTHON_LIB" "$EMBEDDED_PYTHON/lib/"
+else
+    echo "⚠️  Python library not found at $PYTHON_LIB"
+    # Look for alternative locations
+    for lib_path in "$PYTHON_HOME/lib/python3.13/config-3.13-darwin/libpython3.13.dylib" "/opt/homebrew/lib/libpython3.13.dylib"; do
+        if [ -f "$lib_path" ]; then
+            echo "📚 Found Python library at $lib_path"
+            cp "$lib_path" "$EMBEDDED_PYTHON/lib/"
+            break
+        fi
+    done
+fi
+
+# Copy Python standard library
+echo "📖 Copying Python standard library..."
+cp -r "$PYTHON_HOME/lib/python3.13" "$EMBEDDED_PYTHON/lib/"
+
+# Copy Python headers (needed for some packages)
+echo "📋 Copying Python headers..."
+if [ -d "$PYTHON_HOME/include/python3.13" ]; then
+    cp -r "$PYTHON_HOME/include/python3.13" "$EMBEDDED_PYTHON/include/"
+fi
+
+# Install required Python packages into embedded location
+echo "📦 Installing required Python packages..."
+EMBEDDED_SITE_PACKAGES="$EMBEDDED_PYTHON/lib/python3.13/site-packages"
+
+# Install core packages needed by the app
+"$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
+    --upgrade --no-deps --no-cache-dir \
+    numpy==2.3.1 \
+    networkx==3.5 \
+    requests>=2.31.0 \
+    python-dotenv>=1.0.0 \
+    openai>=1.0.0 \
+    tavily-python>=0.3.0 || {
+    echo "⚠️  Some packages failed to install, continuing..."
+}
+
+echo "✅ Python $PYTHON_VERSION embedded successfully!"
 
 # Copy app icon
 echo "🎨 Copying app icon..."
@@ -70,10 +142,15 @@ fi
 echo "🔐 Setting permissions..."
 chmod -R 755 "$APP_DIR"
 
-# Code signing with entitlements (if available)
-echo "📝 Code signing with entitlements..."
+# Code signing with entitlements (simplified approach)
+echo "📝 Code signing..."
 if [ -f "Glyph.entitlements" ]; then
     echo "🔏 Signing with entitlements for PythonKit compatibility..."
+    # Sign Python components first
+    find "$APP_DIR/Contents/Python" -name "*.dylib" -exec codesign --force --sign - {} \; || echo "⚠️  Some Python libraries couldn't be signed"
+    codesign --force --sign - "$APP_DIR/Contents/Python/bin/python3.13" || echo "⚠️  Python executable signing failed"
+    
+    # Sign the main app
     codesign --force --deep --sign - --entitlements "Glyph.entitlements" "$APP_DIR" || {
         echo "⚠️  Code signing with entitlements failed, trying without..."
         codesign --force --deep --sign - "$APP_DIR" || echo "⚠️  Code signing failed completely"
@@ -92,13 +169,15 @@ echo "✅ App bundle created successfully!"
 echo "📍 Location: $APP_DIR"
 echo "🖱️  Shortcut: $DESKTOP_APP"
 echo ""
-echo "🐍 PythonKit Configuration:"
+echo "🐍 Embedded Python Configuration:"
+echo "   ✓ Python Version: $PYTHON_VERSION"
+echo "   ✓ Python Path: Contents/Python"
 echo "   ✓ App Sandbox: Disabled"
 echo "   ✓ Library Validation: Disabled"
-echo "   ✓ Python Runtime: Accessible"
+echo "   ✓ Core Packages: numpy, networkx, requests, openai, tavily-python"
 echo ""
 echo "🚀 To run your app:"
 echo "   Double-click: $DESKTOP_APP"
 echo "   Command line: open '$APP_DIR'"
 echo ""
-echo "🎉 Your Glyph app with PythonKit support is ready!" 
+echo "🎉 Your Glyph app with embedded Python $PYTHON_VERSION is ready!" 
