@@ -8,6 +8,8 @@ class PythonGraphService: ObservableObject {
     @Published var isOnlineMode = true
     @Published var lastError: String?
     @Published var pythonAvailable = false
+    @Published var availableModules: [String: Bool] = [:]
+    @Published var pythonPath: String = ""
     
     private var python: PythonObject?
     private var sys: PythonObject?
@@ -15,20 +17,20 @@ class PythonGraphService: ObservableObject {
     // Static flag to ensure Python is configured only once
     private static var pythonConfigured = false
     
-    // TEMPORARY: Disable Python to prevent crashes
-    private static let pythonDisabled = true
+    // Enable Python with robust error handling
+    private static let pythonDisabled = false
     
     init() {
         if Self.pythonDisabled {
             // Skip Python initialization entirely
             print("🚫 Python initialization disabled - using mock data only")
             pythonAvailable = false
-            isInitialized = true // Mark as initialized so the app works
+            isInitialized = true
             lastError = "Python disabled for stability"
         } else {
             // Ensure Python is configured before any initialization
             Self.ensurePythonConfigured()
-            // Then attempt to initialize Python
+            // Then attempt to initialize Python with error handling
             initializePython()
         }
     }
@@ -37,12 +39,12 @@ class PythonGraphService: ObservableObject {
         guard !pythonConfigured else { return }
         pythonConfigured = true
         
-        print("🐍 Configuring embedded Python (static)...")
+        print("🐍 Configuring Python environment...")
         
         // Get the app bundle path
         let bundlePath = Bundle.main.bundlePath
         
-        // Set up paths for embedded Python 3.13.3
+        // Try embedded Python first, then system Python
         let pythonPath = "\(bundlePath)/Contents/Python"
         let pythonExecutable = "\(pythonPath)/bin/python3.13"
         let pythonLibraryPath = "\(pythonPath)/lib/libpython3.13.dylib"
@@ -72,65 +74,133 @@ class PythonGraphService: ObservableObject {
             
             print("🔧 Embedded Python configured successfully")
         } else {
-            print("⚠️  Embedded Python not found - using system Python")
+            print("⚠️ Embedded Python not found - using system Python")
             print("   Missing: \(pythonExecutable) or \(pythonLibraryPath)")
+            
+            // Try to use system Python
+            if let systemPython = findSystemPython() {
+                print("✅ Found system Python: \(systemPython)")
+            } else {
+                print("❌ No Python installation found")
+            }
         }
     }
     
-    private func configureEmbeddedPython() {
-        // This method is now deprecated - configuration happens statically
-        Self.ensurePythonConfigured()
+    static func findSystemPython() -> String? {
+        let possiblePaths = [
+            "/usr/bin/python3",
+            "/usr/local/bin/python3",
+            "/opt/homebrew/bin/python3",
+            "/usr/bin/python",
+            ProcessInfo.processInfo.environment["PYTHONPATH"] ?? ""
+        ]
+        
+        let fileManager = FileManager.default
+        for path in possiblePaths {
+            if fileManager.fileExists(atPath: path) {
+                return path
+            }
+        }
+        return nil
     }
     
     private func initializePython() {
-        print("🐍 Attempting to initialize Python...")
-        
-        // Try to access Python library - this should now use embedded Python
-        let pythonLib: PythonObject
-        let sysModule: PythonObject
+        print("🐍 Attempting to initialize Python with error handling...")
         
         do {
-            // This should now use our embedded Python
-            pythonLib = Python.library
-            sysModule = Python.import("sys")
+            // Try to access basic Python functionality with proper error handling  
+            let sysModule = try Python.attemptImport("sys")
+            
+            // If we get here, basic Python is available
+            self.sys = sysModule
+            self.pythonAvailable = true
+            
+            // Get Python path info safely
+            self.pythonPath = String(describing: sysModule.executable)
+            
+            // Print Python configuration info
+            print("🐍 Python initialized successfully:")
+            print("   Version: \(sysModule.version)")
+            print("   Executable: \(sysModule.executable)")
+            print("   Path: \(sysModule.path)")
+            
+            // Test core modules with graceful degradation
+            testPythonModules()
+            
+            print("✅ Python initialization completed")
+            isInitialized = true
+            lastError = nil
+            
         } catch {
+            print("⚠️ Python initialization failed: \(error)")
             pythonAvailable = false
             isInitialized = false
-            lastError = "Python library not accessible: \(error.localizedDescription)"
-            print("⚠️ Python library not accessible: \(error)")
-            print("💡 App will continue with mock data and reduced functionality")
-            return
+            lastError = "Python initialization failed: \(error.localizedDescription)"
+            
+            // Still mark as initialized so app can work with mock data
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1) {
+                self.isInitialized = true
+                self.lastError = "Python unavailable - using mock data mode"
+            }
+        }
+    }
+    
+    private func testPythonModules() {
+        print("📦 Testing Python modules...")
+        
+        let requiredModules = [
+            "sys": "System module",
+            "os": "Operating system interface", 
+            "json": "JSON encoder/decoder",
+            "urllib": "URL handling modules",
+            "re": "Regular expressions"
+        ]
+        
+        let optionalModules = [
+            "numpy": "Numerical computing",
+            "networkx": "Network analysis",
+            "pandas": "Data manipulation",
+            "requests": "HTTP library",
+            "transformers": "Transformer models",
+            "torch": "PyTorch",
+            "openai": "OpenAI API client",
+            "tavily": "Tavily search client"
+        ]
+        
+        // Test required modules first
+        for (module, description) in requiredModules {
+            if testModuleImport(module, description: description) {
+                availableModules[module] = true
+            } else {
+                availableModules[module] = false
+                print("❌ Required module '\(module)' not available")
+            }
         }
         
-        // If we get here, Python is available
-        self.python = pythonLib
-        self.sys = sysModule  
-        self.pythonAvailable = true
+        // Test optional modules
+        for (module, description) in optionalModules {
+            if testModuleImport(module, description: description) {
+                availableModules[module] = true
+            } else {
+                availableModules[module] = false
+                print("⚠️ Optional module '\(module)' not available - some features will be limited")
+            }
+        }
         
-        // Print Python configuration info
-        print("🐍 Python initialized successfully:")
-        print("   Version: \(sysModule.version)")
-        print("   Executable: \(sysModule.executable)")
-        print("   Path: \(sysModule.path)")
-        
-        // Simplified module loading - just try the basics
-        print("📦 Testing core Python modules...")
-        
-        // Test numpy
-        _ = pythonLib.import("numpy")
-        print("📊 NumPy import completed")
-        
-        // Test networkx  
-        _ = pythonLib.import("networkx")
-        print("🕸️ NetworkX import completed")
-        
-        // Test json
-        _ = pythonLib.import("json")
-        print("📋 JSON import completed")
-        
-        print("✅ Python initialization completed")
-        isInitialized = true
-        lastError = nil
+        let availableCount = availableModules.values.filter { $0 }.count
+        let totalCount = availableModules.count
+        print("📋 Module availability: \(availableCount)/\(totalCount) modules available")
+    }
+    
+    private func testModuleImport(_ moduleName: String, description: String) -> Bool {
+        do {
+            _ = try Python.attemptImport(moduleName)
+            print("✅ \(moduleName): \(description)")
+            return true
+        } catch {
+            print("❌ \(moduleName): Not available (\(error.localizedDescription))")
+            return false
+        }
     }
     
     // MARK: - Python Status Check
@@ -139,11 +209,32 @@ class PythonGraphService: ObservableObject {
         if Self.pythonDisabled {
             return "Python disabled - using mock data mode"
         } else if pythonAvailable && isInitialized {
-            return "Python is available and initialized"
+            let availableCount = availableModules.values.filter { $0 }.count
+            let totalCount = availableModules.count
+            return "Python available (\(availableCount)/\(totalCount) modules) - Path: \(pythonPath)"
         } else if pythonAvailable {
-            return "Python is available but not fully initialized"
+            return "Python available but not fully initialized"
         } else {
-            return "Python is not available - using mock data mode"
+            return "Python not available - using mock data mode"
+        }
+    }
+    
+    func getModuleStatus() -> [String: Bool] {
+        return availableModules
+    }
+    
+    func hasModule(_ moduleName: String) -> Bool {
+        return availableModules[moduleName] == true
+    }
+    
+    // MARK: - Safe Module Usage
+    
+    private func safeImport(_ moduleName: String) -> PythonObject? {
+        do {
+            return try Python.attemptImport(moduleName)
+        } catch {
+            print("⚠️ Failed to import \(moduleName): \(error)")
+            return nil
         }
     }
     
@@ -185,15 +276,61 @@ class PythonGraphService: ObservableObject {
         ]
     }
     
-    // MARK: - Tavily Search Integration (Simplified)
+    // MARK: - Network Analysis (with NetworkX if available)
+    
+    func analyzeGraphStructure(graphData: GraphData) -> [String: Any] {
+        guard hasModule("networkx"), let nx = safeImport("networkx") else {
+            return mockGraphAnalysis(graphData: graphData)
+        }
+        
+        // Convert to NetworkX format and analyze
+        let G = nx.DiGraph()
+        
+        // Add nodes and edges (simplified for safety)
+        for node in graphData.nodes {
+            G.add_node(node.id.uuidString)  
+        }
+        
+        for edge in graphData.edges {
+            G.add_edge(edge.sourceId.uuidString, edge.targetId.uuidString)
+        }
+        
+        // Calculate basic metrics
+        let nodeCount = Int(G.number_of_nodes()) ?? 0
+        let edgeCount = Int(G.number_of_edges()) ?? 0
+        let density = Double(nx.density(G)) ?? 0.0
+        
+        return [
+            "nodes": nodeCount,
+            "edges": edgeCount, 
+            "density": density,
+            "analysis_method": "networkx",
+            "available_algorithms": ["centrality", "community_detection", "shortest_paths"]
+        ]
+    }
+    
+    private func mockGraphAnalysis(graphData: GraphData) -> [String: Any] {
+        return [
+            "nodes": graphData.nodes.count,
+            "edges": graphData.edges.count,
+            "density": Double(graphData.edges.count) / Double(max(1, graphData.nodes.count * (graphData.nodes.count - 1))),
+            "analysis_method": "mock",
+            "available_algorithms": ["basic_stats"]
+        ]
+    }
+    
+    // MARK: - API Integration with Fallbacks
     
     func searchWithTavily(queries: [String], limit: Int = 5, apiKey: String) async throws -> [[String: Any]] {
         guard isInitialized else {
             throw APIError.networkError("Python not initialized")
         }
         
-        // For now, return mock data to avoid concurrency issues
-        // TODO: Implement real Tavily integration with proper async handling
+        if hasModule("tavily") && hasModule("requests") {
+            // TODO: Implement real Tavily integration
+            print("📡 Real Tavily integration available but not yet implemented")
+        }
+        
         return generateMockTavilyResults(queries: queries, limit: limit)
     }
     
@@ -203,7 +340,7 @@ class PythonGraphService: ObservableObject {
         for (index, query) in queries.prefix(limit).enumerated() {
             let result: [String: Any] = [
                 "title": "Research on \(query)",
-                "url": "https://example.com/article\(index + 1)",
+                "url": "https://example.com/article\(index + 1)", 
                 "content": "Comprehensive analysis of \(query) with detailed findings and expert insights. This article covers the fundamental concepts, latest developments, and practical applications in the field.",
                 "score": Double.random(in: 0.7...0.95),
                 "published_date": "2024-01-\(15 + index)"
@@ -214,24 +351,25 @@ class PythonGraphService: ObservableObject {
         return results
     }
     
-    // MARK: - LLM Query Generation (Simplified)
-    
     func generateSearchQueries(topic: String, apiKey: String) async throws -> [String] {
         guard isInitialized else {
             throw APIError.networkError("Python not initialized")
         }
         
+        if hasModule("openai") {
+            // TODO: Implement real OpenAI integration
+            print("🤖 Real OpenAI integration available but not yet implemented")
+        }
+        
         // Generate intelligent queries based on topic
         return [
             "\(topic) fundamentals and basic concepts",
-            "\(topic) latest research and developments 2024",
+            "\(topic) latest research and developments 2024", 
             "\(topic) expert opinions and analysis",
             "\(topic) practical applications and case studies",
             "\(topic) controversies and different perspectives"
         ]
     }
-    
-    // MARK: - Reliability Scoring (Simplified)
     
     func scoreReliability(results: [[String: Any]], sourcePreferences: [String], apiKey: String) async throws -> [[String: Any]] {
         guard isInitialized else {
@@ -259,35 +397,23 @@ class PythonGraphService: ObservableObject {
         }
     }
     
-    // MARK: - Real API Integration (Future Implementation)
+    // MARK: - Package Installation Support
     
-    func performRealTavilySearch(queries: [String], limit: Int, apiKey: String) -> [[String: Any]] {
-        // This would be the real implementation using HTTP requests
-        // Avoiding PythonKit for API calls to prevent concurrency issues
+    func installRequiredPackages() async throws {
+        guard pythonAvailable else {
+            throw APIError.networkError("Python not available")
+        }
         
-        print("📡 Real Tavily API integration placeholder")
-        print("🔍 Queries: \(queries)")
-        print("🔑 API Key present: \(!apiKey.isEmpty)")
+        print("📦 Checking for package installation capability...")
         
-        // TODO: Implement with URLSession for direct HTTP calls
-        return generateMockTavilyResults(queries: queries, limit: limit)
-    }
-    
-    func performRealOpenAIQueries(topic: String, apiKey: String) -> [String] {
-        // This would be the real implementation using HTTP requests
-        
-        print("🤖 Real OpenAI API integration placeholder")
-        print("💭 Topic: \(topic)")
-        print("🔑 API Key present: \(!apiKey.isEmpty)")
-        
-        // TODO: Implement with URLSession for direct HTTP calls
-        return [
-            "\(topic) fundamentals and core principles",
-            "\(topic) current research and latest findings",
-            "\(topic) expert analysis and professional opinions",
-            "\(topic) real-world applications and case studies",
-            "\(topic) debates and alternative perspectives"
-        ]
+        // Check if we can install packages
+        if hasModule("pip") {
+            print("✅ pip is available - package installation possible")
+            // TODO: Implement package installation from requirements.txt
+        } else {
+            print("⚠️ pip not available - cannot install packages automatically")
+            print("💡 Packages need to be pre-installed in the Python environment")
+        }
     }
     
     // MARK: - Online/Offline Mode
@@ -299,22 +425,6 @@ class PythonGraphService: ObservableObject {
     // MARK: - Dependency Check
     
     func checkPythonDependencies() -> [String: Bool] {
-        guard let python = python else {
-            return ["python": false]
-        }
-        
-        var status: [String: Bool] = [:]
-        
-        let modules = ["numpy", "networkx", "tavily", "openai", "json"]
-        
-        for module in modules {
-            if let _ = try? python.import(module) {
-                status[module] = true
-            } else {
-                status[module] = false
-            }
-        }
-        
-        return status
+        return availableModules
     }
 } 
