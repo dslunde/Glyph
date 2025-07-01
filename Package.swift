@@ -23,12 +23,25 @@ let package = Package(
                 .product(name: "Gzip", package: "GzipSwift")
             ],
             resources: [
-                .process("Resources")
+                .process("Resources"),
+                .copy("PythonAPIService.py"),
+                .copy("source_collection_workflow.py")
+            ],
+            swiftSettings: [
+                // Disable strict concurrency checking for PythonKit compatibility
+                .unsafeFlags(["-Xfrontend", "-disable-availability-checking"]),
+                .unsafeFlags(["-Xfrontend", "-warn-concurrency"])
             ],
             linkerSettings: [
                 .linkedFramework("Accelerate"),
                 .linkedFramework("Metal"),
-                .linkedFramework("MetalKit")
+                .linkedFramework("MetalKit"),
+                // Python framework linking
+                .linkedLibrary("python3.13"),
+                .unsafeFlags(["-Xlinker", "-rpath", "-Xlinker", "/Users/darrenlund/.pyenv/versions/3.13.3/lib"]),
+                .unsafeFlags(["-L/Users/darrenlund/.pyenv/versions/3.13.3/lib"]),
+                // Disable library validation for PythonKit
+                .unsafeFlags(["-Xlinker", "-no_adhoc_codesign"])
             ]
         )
     ]

@@ -167,3 +167,77 @@ Sources/
 - **requirements.txt**: Python package specifications
 - **Version Pinning**: Stable versions for production, flexible for development
 - **Conflict Resolution**: Prefer packages without exact version constraints 
+
+## API Integration Patterns
+
+### Real API Service Architecture
+**Decision**: Separate Python service module for API implementations
+**Implementation**: `PythonAPIService.py` with dedicated functions for each API
+**Rationale**:
+- Clean separation between Swift UI and Python API logic
+- Comprehensive error handling in Python before Swift integration  
+- Easy testing and validation of API functionality
+- Type-safe data contracts between Swift and Python
+
+### LangSmith Observability Pattern
+**Decision**: Comprehensive operation tracing with LangSmith integration
+**Implementation**: `LangSmithService.swift` + `@traceable` Python decorators
+**Rationale**:
+- Full visibility into API call performance and errors
+- User behavior analytics for optimization insights
+- Debugging capabilities for complex search pipelines
+- Professional-grade observability for production use
+
+### Error Handling Hierarchy
+```
+1. Real API Call (OpenAI/Tavily)
+   ↓ (on failure)
+2. Fallback API Logic (retry, alternative endpoints)
+   ↓ (on failure)  
+3. Mock Data Generation (domain-based, intelligent defaults)
+   ↓ (always succeeds)
+4. User Notification (clear error messaging with next steps)
+```
+
+### Cost Optimization Strategy
+- **Model Selection**: GPT-4o-mini for 90% cost reduction vs GPT-4
+- **Rate Limiting**: Automatic delays between API calls to prevent abuse
+- **Content Limiting**: Truncate long content before sending to APIs
+- **Timeout Management**: 15-30 second timeouts to prevent expensive long calls
+- **Caching Strategy**: Cache expensive operations when possible
+
+## Data Flow Patterns
+
+### Swift-Python API Integration
+```
+SwiftUI → PythonGraphService → PythonAPIService → Real APIs
+   ↑                                ↓              ↓
+   └── Results ← Type Conversion ← Processing ← API Response
+```
+
+### LangSmith Tracing Flow
+```
+Swift Initiates → LangSmithService → HTTP API → LangSmith Dashboard
+Python Executes → @traceable → LangSmith Client → Trace Aggregation
+```
+
+### Error Propagation Pattern
+```
+API Error → Python Exception → Swift Error → UI Message → User Action
+         ↓                    ↓              ↓
+         Fallback Logic → Mock Data → Seamless UX
+```
+
+## Performance Optimization Patterns
+
+### API Call Optimization
+- **Batch Processing**: Group related operations to minimize API calls
+- **Concurrent Requests**: Use async operations for independent API calls
+- **Progressive Loading**: Stream results to user while processing continues
+- **Memory Management**: Process large datasets in chunks to prevent memory issues
+
+### Error Recovery Patterns
+- **Circuit Breaker**: Temporarily disable failing APIs to prevent cascading failures
+- **Exponential Backoff**: Intelligent retry logic for transient failures
+- **Graceful Degradation**: Maintain core functionality when external services fail
+- **User Communication**: Clear error messages with actionable remediation steps 
