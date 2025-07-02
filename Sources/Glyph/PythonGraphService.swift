@@ -278,6 +278,18 @@ class PythonGraphService: ObservableObject {
                 print("🔧 Development mode - APP_BUNDLE_MODE unset for knowledge graph generation")
             }
             
+            // Clear any old status file before starting
+            let cacheDir = Bundle.main.bundlePath.contains(".app") ? 
+                FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("com.glyph.knowledge-graph-explorer").path :
+                "./graph_cache"
+            let statusFile = "\(cacheDir)/kg_status.json"
+            
+            if FileManager.default.fileExists(atPath: statusFile) {
+                try? FileManager.default.removeItem(atPath: statusFile)
+                print("🗑️ Cleared old status file")
+            }
+            
             // Start status polling BEFORE Python execution
             print("🔄 Starting Python status polling...")
             let statusPollingTask = Task {
@@ -339,6 +351,12 @@ class PythonGraphService: ObservableObject {
             
             // Give polling task a moment to finish and report final status
             try await Task.sleep(nanoseconds: 300_000_000) // 300ms
+            
+            // Clean up status file after completion
+            if FileManager.default.fileExists(atPath: statusFile) {
+                try? FileManager.default.removeItem(atPath: statusFile)
+                print("🧹 Cleaned up status file")
+            }
             
             // Extract results from Python dict
             let success = Bool(result["success"]) ?? false
@@ -435,6 +453,18 @@ class PythonGraphService: ObservableObject {
         } catch {
             print("❌ Knowledge graph generation Python call failed: \(error)")
             print("🔄 Falling back to mock graph generation")
+            
+            // Clean up status file on error too
+            let errorCacheDir = Bundle.main.bundlePath.contains(".app") ? 
+                FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+                    .appendingPathComponent("com.glyph.knowledge-graph-explorer").path :
+                "./graph_cache"
+            let errorStatusFile = "\(errorCacheDir)/kg_status.json"
+            
+            if FileManager.default.fileExists(atPath: errorStatusFile) {
+                try? FileManager.default.removeItem(atPath: errorStatusFile)
+                print("🧹 Cleaned up status file after error")
+            }
             
             // Generate mock knowledge graph
             let mockResult = generateMockKnowledgeGraph(from: sources, topic: topic, progressCallback: progressCallback)
@@ -869,9 +899,9 @@ class PythonGraphService: ObservableObject {
                     }
                 } else {
                     if pollCount == 1 {
-                        print("⏳ Status file not found yet, starting polling...")
-                    } else if pollCount % 25 == 0 {  // Every 5 seconds
-                        print("⏳ Still waiting for status file... (poll #\(pollCount))")
+                        print("⏳ Status file not found yet, waiting for Python to create it...")
+                    } else if pollCount % 50 == 0 {  // Every 10 seconds
+                        print("⏳ Still waiting for status file... (poll #\(pollCount)) - Python may still be initializing")
                     }
                 }
                 
