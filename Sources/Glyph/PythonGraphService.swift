@@ -480,6 +480,146 @@ class PythonGraphService: ObservableObject {
         }
     }
     
+    // MARK: - Enhanced Source Processing
+    
+    /// Process manual sources (files, folders, URLs) with intelligent expansion
+    func processManualSources(
+        filePaths: [String],
+        urls: [String], 
+        topic: String,
+        maxPages: Int = 10
+    ) async throws -> [String: Any] {
+        guard isInitialized else {
+            throw APIError.networkError("Python not initialized")
+        }
+        
+        print("🔄 Starting enhanced source processing...")
+        print("   📁 File paths: \(filePaths.count)")
+        print("   🌐 URLs: \(urls.count)")
+        print("   📝 Topic: \(topic)")
+        
+        do {
+            // Call the enhanced source processing module
+            guard let pythonInstance = python else {
+                throw APIError.networkError("Python not available")
+            }
+            
+            let result = pythonInstance.attemptImport("enhanced_source_processing")
+            let processFunc = result["process_manual_sources_sync"]
+            
+            let pythonResult = processFunc(filePaths, urls, topic, maxPages)
+            
+            // Convert Python result to Swift dictionary
+            let swiftResult = convertPythonToSwift(pythonResult)
+            
+            if let resultDict = swiftResult as? [String: Any] {
+                let totalSources = resultDict["total_sources"] as? Int ?? 0
+                let metadata = resultDict["metadata"] as? [String: Any] ?? [:]
+                let errors = (metadata["errors"] as? [String]) ?? []
+                
+                print("✅ Enhanced source processing completed:")
+                print("   📄 Total sources: \(totalSources)")
+                print("   📁 Files processed: \(metadata["files_processed"] ?? 0)")
+                print("   🌐 URLs expanded: \(metadata["total_discovered_pages"] ?? 0)")
+                
+                if !errors.isEmpty {
+                    print("   ⚠️ Errors encountered: \(errors.count)")
+                    for error in errors {
+                        print("     • \(error)")
+                    }
+                }
+                
+                return resultDict
+            }
+            
+        } catch {
+            print("❌ Enhanced source processing failed: \(error)")
+            print("🔄 Falling back to basic processing")
+            
+            // Fallback to basic processing
+            return generateBasicManualSources(filePaths: filePaths, urls: urls, topic: topic)
+        }
+        
+        return generateBasicManualSources(filePaths: filePaths, urls: urls, topic: topic)
+    }
+    
+    private func generateBasicManualSources(filePaths: [String], urls: [String], topic: String) -> [String: Any] {
+        print("🔄 Using basic manual source processing...")
+        
+        var sources: [[String: Any]] = []
+        var metadata: [String: Any] = [
+            "files_processed": 0,
+            "folders_scanned": 0,
+            "urls_expanded": 0,
+            "total_discovered_pages": 0,
+            "errors": []
+        ]
+        
+        // Process file paths
+        for filePath in filePaths {
+            guard !filePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            
+            let fileManager = FileManager.default
+            let path = URL(fileURLWithPath: filePath)
+            
+            if fileManager.fileExists(atPath: filePath) {
+                let source: [String: Any] = [
+                    "title": path.lastPathComponent,
+                    "content": "Local file: \(filePath)",
+                    "url": "file://\(filePath)",
+                    "score": 0.9,
+                    "published_date": "",
+                    "query": "File: \(path.lastPathComponent)",
+                    "reliability_score": 90,
+                    "source_type": "file",
+                    "word_count": 0
+                ]
+                sources.append(source)
+                metadata["files_processed"] = (metadata["files_processed"] as? Int ?? 0) + 1
+            }
+        }
+        
+        // Process URLs
+        for url in urls {
+            guard !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            
+            let source: [String: Any] = [
+                "title": generateTitleFromURL(url),
+                "content": "User-provided URL: \(url)",
+                "url": url,
+                "score": 0.8,
+                "published_date": "",
+                "query": "Manual URL: \(url)",
+                "reliability_score": 75,
+                "source_type": "url",
+                "word_count": 0
+            ]
+            sources.append(source)
+            metadata["urls_expanded"] = (metadata["urls_expanded"] as? Int ?? 0) + 1
+        }
+        
+        print("✅ Basic processing: \(sources.count) sources created")
+        
+        return [
+            "sources": sources,
+            "metadata": metadata,
+            "total_sources": sources.count
+        ]
+    }
+    
+    private func generateTitleFromURL(_ url: String) -> String {
+        guard let urlComponents = URLComponents(string: url) else { return url }
+        
+        if let path = urlComponents.path.split(separator: "/").last {
+            let title = String(path)
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+            return title.capitalized
+        }
+        
+        return urlComponents.host ?? url
+    }
+    
     // MARK: - Learning Plan Generation
     
     /// Generate detailed learning plan from minimal subgraph

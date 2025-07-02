@@ -8,6 +8,7 @@ struct ChatView: View {
     @State private var currentMessage = ""
     @State private var isProcessing = false
     @State private var showingSettings = false
+    @State private var currentProjectId: UUID?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -107,6 +108,12 @@ struct ChatView: View {
         .sheet(isPresented: $showingSettings) {
             ChatSettingsView()
         }
+        .onAppear {
+            checkProjectChange()
+        }
+        .onChange(of: project.id) { _ in
+            checkProjectChange()
+        }
     }
     
     private func welcomeMessage() -> String {
@@ -125,6 +132,21 @@ struct ChatView: View {
         
         What would you like to explore?
         """
+    }
+    
+    private func checkProjectChange() {
+        // Reset state if project has changed
+        if currentProjectId != project.id {
+            print("🔄 Chat view project changed from \(currentProjectId?.uuidString ?? "none") to \(project.id.uuidString)")
+            
+            // Clear all chat state for the new project
+            messages.removeAll()
+            currentMessage = ""
+            isProcessing = false
+            
+            // Update current project tracking
+            currentProjectId = project.id
+        }
     }
     
     private func sendMessage() {

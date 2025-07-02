@@ -26,7 +26,8 @@ let package = Package(
                 .process("Resources"),
                 .copy("PythonAPIService.py"),
                 .copy("source_collection_workflow.py"),
-                .copy("knowledge_graph_generation.py")
+                .copy("knowledge_graph_generation.py"),
+                .copy("enhanced_source_processing.py")
             ],
             swiftSettings: [
                 // Disable strict concurrency checking for PythonKit compatibility

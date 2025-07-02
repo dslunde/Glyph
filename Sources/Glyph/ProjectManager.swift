@@ -71,10 +71,7 @@ class ProjectManager: ObservableObject {
         selectedProject = newProject
         saveProjects()
         
-        // Initialize with sample graph data
-        Task {
-            await initializeSampleGraph(for: newProject)
-        }
+        print("✅ Created new project: \(name) with empty state")
     }
     
     func createProjectWithCustomLearningPlan(name: String, description: String = "", topic: String = "",
@@ -103,10 +100,7 @@ class ProjectManager: ObservableObject {
         selectedProject = newProject
         saveProjects()
         
-        // Initialize with sample graph data
-        Task {
-            await initializeSampleGraph(for: newProject)
-        }
+        print("✅ Created new project with custom learning plan: \(name)")
     }
     
     func deleteProject(_ project: Project) {

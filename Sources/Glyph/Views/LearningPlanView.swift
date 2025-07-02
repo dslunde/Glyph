@@ -8,6 +8,7 @@ struct LearningPlanView: View {
     @State private var selectedPhase: String?
     @State private var expandedConcepts: Set<String> = []
     @State private var errorMessage: String?
+    @State private var currentProjectId: UUID?
     
     var body: some View {
         VStack(spacing: 0) {
@@ -138,8 +139,30 @@ struct LearningPlanView: View {
             }
         }
         .onAppear {
+            checkProjectChange()
+        }
+        .onChange(of: project.id) { _ in
+            checkProjectChange()
+        }
+    }
+    
+    private func checkProjectChange() {
+        // Reset state if project has changed
+        if currentProjectId != project.id {
+            print("🔄 Project changed from \(currentProjectId?.uuidString ?? "none") to \(project.id.uuidString)")
+            
+            // Clear all state for the new project
+            learningPlanData = nil
+            selectedPhase = nil
+            expandedConcepts.removeAll()
+            errorMessage = nil
+            isGenerating = false
+            
+            // Update current project tracking
+            currentProjectId = project.id
+            
             // Auto-generate if we have a minimal subgraph but no plan data
-            if learningPlanData == nil && project.graphData?.minimalSubgraph != nil {
+            if project.graphData?.minimalSubgraph != nil {
                 Task {
                     await generateLearningPlan()
                 }

@@ -701,6 +701,7 @@ struct SourceCollectionView: View {
     let projectConfig: ProjectConfiguration
     
     @State private var manualSources: [ManualSource] = []
+    @State private var enhancedManualSources: [[String: Any]] = []
     @State private var searchResults: [SearchResult] = []
     @State private var isSearching = false
     @State private var canContinue = false
@@ -898,9 +899,67 @@ struct SourceCollectionView: View {
             manualSources.append(source)
         }
         
-        // Start validation
+        // Start enhanced processing and validation
         Task {
-            await validateManualSources()
+            await processManualSourcesWithEnhancement()
+        }
+    }
+    
+    private func processManualSourcesWithEnhancement() async {
+        // First do basic validation
+        await validateManualSources()
+        
+        // Then run enhanced processing if we have valid sources
+        let validFilePaths = projectConfig.filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let validUrls = projectConfig.urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        
+        if !validFilePaths.isEmpty || !validUrls.isEmpty {
+            do {
+                print("🚀 Running enhanced source processing...")
+                
+                let enhancedResult = try await projectManager.pythonService.processManualSources(
+                    filePaths: validFilePaths,
+                    urls: validUrls,
+                    topic: projectConfig.topic,
+                    maxPages: 10
+                )
+                
+                // Extract enhanced sources
+                if let sources = enhancedResult["sources"] as? [[String: Any]] {
+                    await MainActor.run {
+                        // Store enhanced sources for knowledge graph generation
+                        enhancedManualSources = sources
+                        print("✅ Enhanced processing complete: \(sources.count) total sources")
+                        
+                        // Update UI to show enhancement results
+                        if let metadata = enhancedResult["metadata"] as? [String: Any] {
+                            let filesProcessed = metadata["files_processed"] as? Int ?? 0
+                            let urlsExpanded = metadata["total_discovered_pages"] as? Int ?? 0
+                            
+                            // Update manual source status to show enhancement
+                            for index in manualSources.indices {
+                                if manualSources[index].status == .valid {
+                                    if manualSources[index].type == .file && filesProcessed > 0 {
+                                        manualSources[index].enhancementInfo = "Content extracted"
+                                    } else if manualSources[index].type == .url && urlsExpanded > 0 {
+                                        manualSources[index].enhancementInfo = "Expanded to \(urlsExpanded) pages"
+                                    }
+                                }
+                            }
+                        }
+                        
+                        updateContinueState()
+                    }
+                }
+                
+            } catch {
+                print("❌ Enhanced source processing failed: \(error)")
+                await MainActor.run {
+                    // Fall back to basic manual sources
+                    enhancedManualSources = []
+                    updateContinueState()
+                }
+            }
         }
     }
     
@@ -1213,17 +1272,24 @@ struct SourceCollectionView: View {
                 ] as [String: Any]
             }
             
-            // Add manual sources to knowledge graph inputs
-            let manualSourcesForKG = validManualSources.map { manualSource in
-                [
-                    "title": manualSource.type == .file ? "File Source" : "URL Source",
-                    "content": "Manual source: \(manualSource.path)",
-                    "url": manualSource.path,
-                    "score": 0.8,
-                    "published_date": "",
-                    "query": projectConfig.topic,
-                    "reliability_score": 80
-                ] as [String: Any]
+            // Use enhanced manual sources if available, otherwise fall back to basic sources
+            let manualSourcesForKG: [[String: Any]]
+            if !enhancedManualSources.isEmpty {
+                print("🚀 Using enhanced manual sources for knowledge graph: \(enhancedManualSources.count) sources")
+                manualSourcesForKG = enhancedManualSources
+            } else {
+                print("🔄 Using basic manual sources for knowledge graph: \(validManualSources.count) sources")
+                manualSourcesForKG = validManualSources.map { manualSource in
+                    [
+                        "title": manualSource.type == .file ? "File Source" : "URL Source", 
+                        "content": "Manual source: \(manualSource.path)",
+                        "url": manualSource.path,
+                        "score": 0.8,
+                        "published_date": "",
+                        "query": projectConfig.topic,
+                        "reliability_score": 80
+                    ] as [String: Any]
+                }
             }
             
             let allSources = sourcesForKG + manualSourcesForKG
@@ -1332,6 +1398,7 @@ struct ManualSource: Identifiable {
     let path: String
     let type: ManualSourceType
     var status: ValidationStatus
+    var enhancementInfo: String?
 }
 
 enum ManualSourceType {
@@ -1426,9 +1493,17 @@ struct ManualSourceRow: View {
                 .frame(width: 20)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(source.type == .file ? "File" : "URL")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack {
+                    Text(source.type == .file ? "File" : "URL")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if let enhancement = source.enhancementInfo {
+                        Text("• \(enhancement)")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                }
                 
                 Text(source.path)
                     .font(.body)
@@ -1438,9 +1513,21 @@ struct ManualSourceRow: View {
             
             Spacer()
             
-            Text(source.status == .validating ? "Validating..." : (source.status == .valid ? "Valid" : "Invalid"))
-                .font(.caption)
-                .foregroundColor(source.status.color)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(source.status == .validating ? "Validating..." : (source.status == .valid ? "Valid" : "Invalid"))
+                    .font(.caption)
+                    .foregroundColor(source.status.color)
+                
+                if source.status == .valid && source.enhancementInfo != nil {
+                    Text("Enhanced")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(3)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)

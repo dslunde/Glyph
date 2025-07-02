@@ -2,36 +2,19 @@ import SwiftUI
 
 struct KnowledgeGraphCanvasView: View {
     let project: Project
-    @State private var minimalGraphData: GraphData
+    @State private var minimalGraphData: GraphData = GraphData()
     @State private var selectedNode: GraphNode?
     @State private var zoomScale: CGFloat = 1.0
     @State private var panOffset: CGSize = .zero
     @State private var draggedNode: GraphNode?
     @State private var showingNodeDetails = false
     @State private var showingControls = true
+    @State private var currentProjectId: UUID?
     
     // User controls
     @State private var nodeSize: Double = 40.0
     @State private var nodeSpacing: Double = 1.0
     @State private var edgeVisibility: Double = 1.0
-    
-    init(project: Project) {
-        self.project = project
-        
-        // Initialize with minimal subgraph or fallback to full graph
-        var initialGraphData = GraphData()
-        if let minimalSubgraph = project.graphData?.minimalSubgraph {
-            initialGraphData.nodes = minimalSubgraph.nodes
-            initialGraphData.edges = minimalSubgraph.edges
-            initialGraphData.metadata = project.graphData?.metadata ?? GraphMetadata()
-        } else if let fullGraphData = project.graphData {
-            initialGraphData.nodes = fullGraphData.nodes
-            initialGraphData.edges = fullGraphData.edges
-            initialGraphData.metadata = fullGraphData.metadata
-        }
-        
-        self._minimalGraphData = State(initialValue: initialGraphData)
-    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -260,8 +243,10 @@ struct KnowledgeGraphCanvasView: View {
             }
         }
         .onAppear {
-            initializeNodePositions()
-            centerGraph()
+            checkProjectChange()
+        }
+        .onChange(of: project.id) { _ in
+            checkProjectChange()
         }
         .onChange(of: nodeSpacing) { _ in
             applyNodeSpacing()
@@ -342,6 +327,52 @@ struct KnowledgeGraphCanvasView: View {
             
             context.draw(labelText, in: labelRect)
         }
+    }
+    
+    // MARK: - Project Management
+    
+    private func checkProjectChange() {
+        // Reset state if project has changed
+        if currentProjectId != project.id {
+            print("🔄 Graph view project changed from \(currentProjectId?.uuidString ?? "none") to \(project.id.uuidString)")
+            
+            // Clear all state for the new project
+            selectedNode = nil
+            draggedNode = nil
+            showingNodeDetails = false
+            zoomScale = 1.0
+            panOffset = .zero
+            
+            // Load graph data for the new project
+            loadProjectGraphData()
+            
+            // Update current project tracking
+            currentProjectId = project.id
+            
+            // Initialize positions and center view
+            initializeNodePositions()
+            centerGraph()
+        }
+    }
+    
+    private func loadProjectGraphData() {
+        // Initialize with minimal subgraph or fallback to full graph
+        var graphData = GraphData()
+        if let minimalSubgraph = project.graphData?.minimalSubgraph {
+            graphData.nodes = minimalSubgraph.nodes
+            graphData.edges = minimalSubgraph.edges
+            graphData.metadata = project.graphData?.metadata ?? GraphMetadata()
+            print("📊 Loaded minimal subgraph: \(graphData.nodes.count) nodes, \(graphData.edges.count) edges")
+        } else if let fullGraphData = project.graphData {
+            graphData.nodes = fullGraphData.nodes
+            graphData.edges = fullGraphData.edges
+            graphData.metadata = fullGraphData.metadata
+            print("📊 Loaded full graph: \(graphData.nodes.count) nodes, \(graphData.edges.count) edges")
+        } else {
+            print("📊 No graph data available for project")
+        }
+        
+        minimalGraphData = graphData
     }
     
     // MARK: - Helper Functions
