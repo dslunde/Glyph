@@ -1,6 +1,51 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Source Models
+
+/// Processed source data structure for Codable storage
+struct ProcessedSource: Identifiable, Codable {
+    var id = UUID()
+    var title: String
+    var content: String
+    var url: String
+    var score: Double
+    var publishedDate: String
+    var query: String
+    var reliabilityScore: Int
+    var sourceType: String
+    var wordCount: Int
+    
+    init(title: String, content: String, url: String, score: Double = 0.8, 
+         publishedDate: String = "", query: String = "", reliabilityScore: Int = 80,
+         sourceType: String = "web", wordCount: Int = 0) {
+        self.title = title
+        self.content = content
+        self.url = url
+        self.score = score
+        self.publishedDate = publishedDate
+        self.query = query
+        self.reliabilityScore = reliabilityScore
+        self.sourceType = sourceType
+        self.wordCount = wordCount
+    }
+    
+    /// Convert to the dictionary format expected by Python services
+    func toDictionary() -> [String: Any] {
+        return [
+            "title": title,
+            "content": content,
+            "url": url,
+            "score": score,
+            "published_date": publishedDate,
+            "query": query,
+            "reliability_score": reliabilityScore,
+            "source_type": sourceType,
+            "word_count": wordCount
+        ]
+    }
+}
+
 // MARK: - Project Model
 
 /// Main project data structure
@@ -21,6 +66,7 @@ struct Project: Identifiable, Codable, Hashable {
     var isOnline: Bool
     var graphData: GraphData?
     var learningPlan: String
+    var sources: [ProcessedSource]?  // Processed sources used for knowledge graph generation
     
     init(name: String, description: String = "", topic: String = "", 
          depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
@@ -41,6 +87,7 @@ struct Project: Identifiable, Codable, Hashable {
         self.lastModified = Date()
         self.isOnline = isOnline
         self.graphData = nil
+        self.sources = nil
         
         // Initialize with Lorem Ipsum as specified in PRD
         self.learningPlan = """

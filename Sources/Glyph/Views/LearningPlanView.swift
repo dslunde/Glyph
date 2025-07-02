@@ -192,8 +192,15 @@ struct LearningPlanView: View {
             // Convert minimal subgraph to dictionary format
             let minimalSubgraphDict = convertMinimalSubgraphToDict(minimalSubgraph)
             
-            // Use empty sources array for now - could be enhanced to use actual sources
-            let sources: [[String: Any]] = []
+            // Use the stored sources from the project for learning plan generation
+            let sources: [[String: Any]]
+            if let projectSources = project.sources {
+                sources = projectSources.map { $0.toDictionary() }
+                print("✅ Using \(projectSources.count) stored sources for learning plan generation")
+            } else {
+                sources = []
+                print("⚠️ No sources found in project - generating learning plan without source context")
+            }
             
             let result = try await pythonService.generateLearningPlan(
                 from: minimalSubgraphDict,

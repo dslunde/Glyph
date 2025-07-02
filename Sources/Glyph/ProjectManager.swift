@@ -103,6 +103,50 @@ class ProjectManager: ObservableObject {
         print("✅ Created new project with custom learning plan: \(name)")
     }
     
+    func createProjectWithCustomLearningPlanAndSources(name: String, description: String = "", topic: String = "",
+                      depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+                      filePaths: [String] = [], urls: [String] = [],
+                      hypotheses: String = "", controversialAspects: String = "",
+                      sensitivityLevel: SensitivityLevel = .medium, learningPlan: String, sources: [[String: Any]]) {
+        var newProject = Project(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: sourcePreferences,
+            filePaths: filePaths,
+            urls: urls,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel,
+            isOnline: isOnlineMode
+        )
+        
+        // Override the default learning plan with the custom one
+        newProject.learningPlan = learningPlan
+        
+        // Convert and store sources
+        newProject.sources = sources.map { sourceDict in
+            ProcessedSource(
+                title: sourceDict["title"] as? String ?? "Unknown Title",
+                content: sourceDict["content"] as? String ?? "",
+                url: sourceDict["url"] as? String ?? "",
+                score: sourceDict["score"] as? Double ?? 0.8,
+                publishedDate: sourceDict["published_date"] as? String ?? "",
+                query: sourceDict["query"] as? String ?? "",
+                reliabilityScore: sourceDict["reliability_score"] as? Int ?? 80,
+                sourceType: sourceDict["source_type"] as? String ?? "web",
+                wordCount: sourceDict["word_count"] as? Int ?? 0
+            )
+        }
+        
+        projects.append(newProject)
+        selectedProject = newProject
+        saveProjects()
+        
+        print("✅ Created new project with custom learning plan and \(sources.count) sources: \(name)")
+    }
+    
     func deleteProject(_ project: Project) {
         projects.removeAll { $0.id == project.id }
         if selectedProject?.id == project.id {
@@ -121,6 +165,32 @@ class ProjectManager: ObservableObject {
     func startKnowledgeGraphGeneration(from sources: [[String: Any]], for project: Project) {
         knowledgeGraphSources = sources
         selectedProject = project
+        
+        // Store sources in the project for later use by learning plan generation
+        if var updatedProject = projects.first(where: { $0.id == project.id }) {
+            updatedProject.sources = sources.map { sourceDict in
+                ProcessedSource(
+                    title: sourceDict["title"] as? String ?? "Unknown Title",
+                    content: sourceDict["content"] as? String ?? "",
+                    url: sourceDict["url"] as? String ?? "",
+                    score: sourceDict["score"] as? Double ?? 0.8,
+                    publishedDate: sourceDict["published_date"] as? String ?? "",
+                    query: sourceDict["query"] as? String ?? "",
+                    reliabilityScore: sourceDict["reliability_score"] as? Int ?? 80,
+                    sourceType: sourceDict["source_type"] as? String ?? "web",
+                    wordCount: sourceDict["word_count"] as? Int ?? 0
+                )
+            }
+            
+            // Update the project in the array and save
+            if let index = projects.firstIndex(where: { $0.id == project.id }) {
+                projects[index] = updatedProject
+                selectedProject = updatedProject
+                saveProjects()
+                print("✅ Stored \(sources.count) sources in project for later learning plan generation")
+            }
+        }
+        
         showingKnowledgeGraphProgress = true
     }
     

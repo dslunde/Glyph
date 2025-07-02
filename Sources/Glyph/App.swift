@@ -1276,13 +1276,48 @@ struct SourceCollectionView: View {
         
         print("🔍 DEBUG: approvedSources = \(approvedSources.count), validManualSources = \(validManualSources.count)")
         
+        // Convert SearchResults to the format expected by knowledge graph generation
+        let sourcesForKG = approvedSources.map { searchResult in
+            [
+                "title": searchResult.title,
+                "content": "Research article by \(searchResult.author) from \(searchResult.date). Reliability score: \(searchResult.reliabilityScore)%",
+                "url": searchResult.url,
+                "score": Double(searchResult.reliabilityScore) / 100.0,
+                "published_date": searchResult.date,
+                "query": projectConfig.topic,
+                "reliability_score": searchResult.reliabilityScore
+            ] as [String: Any]
+        }
+        
+        // Use enhanced manual sources if available, otherwise fall back to basic sources
+        let manualSourcesForKG: [[String: Any]]
+        if !enhancedManualSources.isEmpty {
+            print("🚀 Using enhanced manual sources for knowledge graph: \(enhancedManualSources.count) sources")
+            manualSourcesForKG = enhancedManualSources
+        } else {
+            print("🔄 Using basic manual sources for knowledge graph: \(validManualSources.count) sources")
+            manualSourcesForKG = validManualSources.map { manualSource in
+                [
+                    "title": manualSource.type == .file ? "File Source" : "URL Source", 
+                    "content": "Manual source: \(manualSource.path)",
+                    "url": manualSource.path,
+                    "score": 0.8,
+                    "published_date": "",
+                    "query": projectConfig.topic,
+                    "reliability_score": 80
+                ] as [String: Any]
+            }
+        }
+        
+        let allSources = sourcesForKG + manualSourcesForKG
+        
         // Create learning plan with approved sources instead of Lorem Ipsum
         let learningPlan = generateLearningPlanWithSources(approvedSources: approvedSources, manualSources: validManualSources)
         
-        print("🔍 DEBUG: About to create project with custom learning plan")
+        print("🔍 DEBUG: About to create project with custom learning plan and \(allSources.count) sources")
         
         // Create the project
-        projectManager.createProjectWithCustomLearningPlan(
+        projectManager.createProjectWithCustomLearningPlanAndSources(
             name: projectConfig.name,
             description: projectConfig.description,
             topic: projectConfig.topic,
@@ -1293,86 +1328,17 @@ struct SourceCollectionView: View {
             hypotheses: projectConfig.hypotheses,
             controversialAspects: projectConfig.controversialAspects,
             sensitivityLevel: projectConfig.sensitivityLevel,
-            learningPlan: learningPlan
+            learningPlan: learningPlan,
+            sources: allSources
         )
         
-        print("🔍 DEBUG: Project created, now checking for knowledge graph generation")
+        print("🔍 DEBUG: Project created, now starting knowledge graph generation")
         
-        // Start knowledge graph generation if we have approved sources
-        if !approvedSources.isEmpty {
-            print("🔍 DEBUG: Found approved sources, generating knowledge graph from them")
-            
-            // Convert SearchResults to the format expected by knowledge graph generation
-            let sourcesForKG = approvedSources.map { searchResult in
-                [
-                    "title": searchResult.title,
-                    "content": "Research article by \(searchResult.author) from \(searchResult.date). Reliability score: \(searchResult.reliabilityScore)%",
-                    "url": searchResult.url,
-                    "score": Double(searchResult.reliabilityScore) / 100.0,
-                    "published_date": searchResult.date,
-                    "query": projectConfig.topic,
-                    "reliability_score": searchResult.reliabilityScore
-                ] as [String: Any]
-            }
-            
-            // Use enhanced manual sources if available, otherwise fall back to basic sources
-            let manualSourcesForKG: [[String: Any]]
-            if !enhancedManualSources.isEmpty {
-                print("🚀 Using enhanced manual sources for knowledge graph: \(enhancedManualSources.count) sources")
-                manualSourcesForKG = enhancedManualSources
-            } else {
-                print("🔄 Using basic manual sources for knowledge graph: \(validManualSources.count) sources")
-                manualSourcesForKG = validManualSources.map { manualSource in
-                    [
-                        "title": manualSource.type == .file ? "File Source" : "URL Source", 
-                        "content": "Manual source: \(manualSource.path)",
-                        "url": manualSource.path,
-                        "score": 0.8,
-                        "published_date": "",
-                        "query": projectConfig.topic,
-                        "reliability_score": 80
-                    ] as [String: Any]
-                }
-            }
-            
-            let allSources = sourcesForKG + manualSourcesForKG
-            
-            print("🔍 DEBUG: Total sources for KG: \(allSources.count)")
-            
+        // Start knowledge graph generation with the same sources
+        if !allSources.isEmpty {
             if let createdProject = projectManager.selectedProject {
                 print("🔍 DEBUG: Calling startKnowledgeGraphGeneration with \(allSources.count) sources")
                 projectManager.startKnowledgeGraphGeneration(from: allSources, for: createdProject)
-            } else {
-                print("❌ DEBUG: No selected project found!")
-            }
-        } else if !validManualSources.isEmpty || !enhancedManualSources.isEmpty {
-            print("🔍 DEBUG: No approved search sources, but we have manual sources - using them for KG")
-            
-            // Use manual sources only for knowledge graph generation
-            let manualSourcesForKG: [[String: Any]]
-            if !enhancedManualSources.isEmpty {
-                print("🚀 Using enhanced manual sources for knowledge graph: \(enhancedManualSources.count) sources")
-                manualSourcesForKG = enhancedManualSources
-            } else {
-                print("🔄 Using basic manual sources for knowledge graph: \(validManualSources.count) sources")
-                manualSourcesForKG = validManualSources.map { manualSource in
-                    [
-                        "title": manualSource.type == .file ? "File Source" : "URL Source", 
-                        "content": "Manual source: \(manualSource.path)",
-                        "url": manualSource.path,
-                        "score": 0.8,
-                        "published_date": "",
-                        "query": projectConfig.topic,
-                        "reliability_score": 80
-                    ] as [String: Any]
-                }
-            }
-            
-            print("🔍 DEBUG: Total manual sources for KG: \(manualSourcesForKG.count)")
-            
-            if let createdProject = projectManager.selectedProject {
-                print("🔍 DEBUG: Calling startKnowledgeGraphGeneration with \(manualSourcesForKG.count) manual sources")
-                projectManager.startKnowledgeGraphGeneration(from: manualSourcesForKG, for: createdProject)
             } else {
                 print("❌ DEBUG: No selected project found!")
             }
