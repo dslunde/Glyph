@@ -21,3 +21,4 @@ Downloading openai-1.93.0-py3-none-any.whl (755 kB)
 Downloading tavily_python-0.7.9-py3-none-any.whl (15 kB)
 Installing collected packages: tavily-python, requests, python-dotenv, openai, numpy, networkx
 Successfully installed networkx-3.5 numpy-2.3.1 openai-1.93.0 python-dotenv-1.1.1 requests-2.32.4 tavily-python-0.7.9
+
