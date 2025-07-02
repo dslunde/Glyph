@@ -512,9 +512,11 @@ class KnowledgeGraphBuilder:
             print("⚠️ No centrality scores available - skipping minimal subgraph")
             return
         
-        print("🎯 Finding minimal subgraph...")
+        print(f"🎯 Finding minimal subgraph for {self.graph.number_of_nodes()} nodes...")
+        step_start = datetime.now()
         
         # Combine centrality scores to find most important nodes
+        print("   📊 Combining centrality scores...")
         combined_scores = {}
         for node in self.graph.nodes():
             # Weighted combination of centrality measures
@@ -525,34 +527,46 @@ class KnowledgeGraphBuilder:
                 0.1 * self.centrality_scores['closeness'].get(node, 0)
             )
             combined_scores[node] = score
+        print(f"   ✅ Combined scores for {len(combined_scores)} nodes")
         
         # Select top nodes (20% of total or max 100)
         total_nodes = self.graph.number_of_nodes()
         target_size = min(100, max(10, int(total_nodes * 0.2)))
+        print(f"   🎯 Selecting top {target_size} nodes from {total_nodes} total")
         
         top_nodes = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
         selected_nodes = [node for node, score in top_nodes[:target_size]]
+        print(f"   📋 Selected {len(selected_nodes)} top nodes")
         
         # Create subgraph and ensure connectivity
+        print("   🔗 Creating initial subgraph...")
         self.minimal_subgraph = self.graph.subgraph(selected_nodes).copy()
+        print(f"   ✅ Initial subgraph: {self.minimal_subgraph.number_of_nodes()} nodes, {self.minimal_subgraph.number_of_edges()} edges")
         
-        # Add connecting nodes if subgraph is too fragmented
-        if nx.number_weakly_connected_components(self.minimal_subgraph) > 5:
-            # Find shortest paths between components and add intermediate nodes
-            components = list(nx.weakly_connected_components(self.minimal_subgraph))
-            for i in range(len(components) - 1):
-                try:
-                    source = list(components[i])[0]
-                    target = list(components[i + 1])[0]
-                    path = nx.shortest_path(self.graph, source, target)
-                    for node in path[1:-1]:  # Add intermediate nodes
-                        if node not in selected_nodes:
-                            selected_nodes.append(node)
-                except (nx.NetworkXNoPath, nx.NodeNotFound):
-                    continue
-            
-            # Recreate subgraph with connecting nodes
-            self.minimal_subgraph = self.graph.subgraph(selected_nodes).copy()
+        # Check connectivity (simplified approach)
+        components = nx.number_weakly_connected_components(self.minimal_subgraph)
+        print(f"   🔗 Graph has {components} connected components")
+        
+        if components > 5:
+            print("   🔧 Too many components - adding connecting nodes...")
+            # Simple approach: just add a few more highly connected nodes
+            remaining_nodes = [node for node in self.graph.nodes() if node not in selected_nodes]
+            if remaining_nodes:
+                # Sort by degree and add top nodes
+                node_degrees = []
+                for node in remaining_nodes:
+                    try:
+                        degree = int(self.graph.degree(node))
+                        node_degrees.append((node, degree))
+                    except:
+                        node_degrees.append((node, 0))
+                top_connected = sorted(node_degrees, key=lambda x: x[1], reverse=True)
+                additional_nodes = [node for node, degree in top_connected[:min(10, len(top_connected))]]
+                selected_nodes.extend(additional_nodes)
+                
+                # Recreate subgraph with additional nodes
+                self.minimal_subgraph = self.graph.subgraph(selected_nodes).copy()
+                print(f"   ✅ Added {len(additional_nodes)} connecting nodes")
         
         # Perform topological sort if possible (for DAG-like structures)
         try:

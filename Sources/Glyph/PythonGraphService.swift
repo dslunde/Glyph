@@ -261,6 +261,7 @@ class PythonGraphService: ObservableObject {
             let kgModule = try Python.attemptImport("knowledge_graph_generation")
             
             // Convert Swift sources to Python format
+            print("🔄 Converting \(sources.count) sources to Python format...")
             let pythonSources = Python.list(sources.map { source in
                 Python.dict(source.compactMapValues { value -> String in
                     if let stringValue = value as? String {
@@ -275,12 +276,32 @@ class PythonGraphService: ObservableObject {
                 })
             })
             
-            // Call the knowledge graph generation function (without progress callback for now)
-            let result = kgModule.generate_knowledge_graph_from_sources(
-                pythonSources,
-                topic,
-                Python.None
-            )
+            print("🧠 Starting Python knowledge graph generation...")
+            
+            // Create a timeout task for the Python call
+            let pythonTask = Task {
+                return kgModule.generate_knowledge_graph_from_sources(
+                    pythonSources,
+                    topic,
+                    Python.None
+                )
+            }
+            
+            // Create a timeout task
+            let timeoutTask = Task {
+                try await Task.sleep(nanoseconds: 120_000_000_000) // 2 minutes timeout
+                pythonTask.cancel()
+                throw APIError.networkError("Knowledge graph generation timed out after 2 minutes")
+            }
+            
+            // Race between Python execution and timeout
+            let result = try await withTaskCancellationHandler {
+                try await pythonTask.value
+            } onCancel: {
+                timeoutTask.cancel()
+            }
+            
+            timeoutTask.cancel() // Cancel timeout if we completed successfully
             
             // Simulate progress updates since Python callback is complex
             DispatchQueue.main.async { progressCallback(0.2, "Starting knowledge graph generation") }
