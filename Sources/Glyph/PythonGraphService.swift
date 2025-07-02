@@ -337,8 +337,8 @@ class PythonGraphService: ObservableObject {
             }
             
             // Race between Python execution and timeout
-            let result = try await withTaskCancellationHandler {
-                try await pythonTask.value
+            let result = await withTaskCancellationHandler {
+                await pythonTask.value
             } onCancel: {
                 timeoutTask.cancel()
             }
@@ -1084,7 +1084,7 @@ class PythonGraphService: ObservableObject {
                 if let statusDict = try JSONSerialization.jsonObject(with: statusData) as? [String: Any] {
                     let progress = statusDict["progress"] as? Double ?? 0.0
                     let message = statusDict["message"] as? String ?? ""
-                    let completed = statusDict["completed"] as? Bool ?? false
+                    let _ = statusDict["completed"] as? Bool ?? false
                     
                     print("📈 Final progress update: \(Int(progress * 100))% - \(message)")
                     DispatchQueue.main.async {
@@ -1112,36 +1112,26 @@ class PythonGraphService: ObservableObject {
         
         // Check if it's a Python list
         if stringValue.hasPrefix("[") && stringValue.hasSuffix("]") {
-            do {
-                // Try to iterate as a Python list
-                let listArray = Array(value)
-                var swiftArray: [Any] = []
-                for item in listArray {
-                    swiftArray.append(convertPythonToSwift(item))
-                }
-                return swiftArray
-            } catch {
-                // If iteration fails, treat as string
-                return stringValue
+            // Try to iterate as a Python list
+            let listArray = Array(value)
+            var swiftArray: [Any] = []
+            for item in listArray {
+                swiftArray.append(convertPythonToSwift(item))
             }
+            return swiftArray
         }
         
         // Check if it's a Python dictionary
         if stringValue.hasPrefix("{") && stringValue.hasSuffix("}") {
-            do {
-                // Try to iterate as a Python dict
-                let keys = Array(value.keys())
-                var swiftDict: [String: Any] = [:]
-                for key in keys {
-                    let keyString = String(describing: key)
-                    let dictValue = value[key]
-                    swiftDict[keyString] = convertPythonToSwift(dictValue)
-                }
-                return swiftDict
-            } catch {
-                // If iteration fails, treat as string
-                return stringValue
+            // Try to iterate as a Python dict
+            let keys = Array(value.keys())
+            var swiftDict: [String: Any] = [:]
+            for key in keys {
+                let keyString = String(describing: key)
+                let dictValue = value[key]
+                swiftDict[keyString] = convertPythonToSwift(dictValue)
             }
+            return swiftDict
         }
         
         // Handle basic types

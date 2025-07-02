@@ -319,7 +319,7 @@ struct LearningPhaseBreakdownView: View {
                         PhaseCard(
                             phase: phase,
                             timeEstimate: phaseBreakdown[phase] ?? 0,
-                            conceptCount: (conceptGroups[phase] as? [[String: Any]])?.count ?? 0,
+                            conceptCount: conceptGroups[phase]?.count ?? 0,
                             isSelected: selectedPhase == phase
                         ) {
                             selectedPhase = selectedPhase == phase ? nil : phase
@@ -403,7 +403,7 @@ struct LearningPhaseDetailView: View {
                 .fontWeight(.semibold)
             
             if let conceptGroups = data["concept_groups"] as? [String: [[String: Any]]],
-               let concepts = conceptGroups[phase] as? [[String: Any]] {
+               let concepts = conceptGroups[phase] {
                 
                 LazyVStack(spacing: 12) {
                     ForEach(Array(concepts.enumerated()), id: \.offset) { index, concept in

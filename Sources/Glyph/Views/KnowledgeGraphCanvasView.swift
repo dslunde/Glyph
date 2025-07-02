@@ -260,6 +260,7 @@ struct KnowledgeGraphCanvasView: View {
             }
         }
         .onAppear {
+            initializeNodePositions()
             centerGraph()
         }
         .onChange(of: nodeSpacing) { _ in
@@ -270,19 +271,25 @@ struct KnowledgeGraphCanvasView: View {
     // MARK: - Drawing Functions
     
     private func drawEdges(context: GraphicsContext) {
+        guard edgeVisibility > 0 else { return }
+        
         for edge in minimalGraphData.edges {
             guard let sourceNode = minimalGraphData.nodes.first(where: { $0.id == edge.sourceId }),
                   let targetNode = minimalGraphData.nodes.first(where: { $0.id == edge.targetId }) else {
                 continue
             }
             
+            // Use actual node positions (which should be in canvas coordinates)
+            let sourcePos = CGPoint(x: sourceNode.position.x, y: sourceNode.position.y)
+            let targetPos = CGPoint(x: targetNode.position.x, y: targetNode.position.y)
+            
             let path = Path { path in
-                path.move(to: sourceNode.position)
-                path.addLine(to: targetNode.position)
+                path.move(to: sourcePos)
+                path.addLine(to: targetPos)
             }
             
-            let edgeColor = Color.secondary.opacity(edgeVisibility * 0.7)
-            let lineWidth = 1.5 + (edge.weight * 1.5)
+            let edgeColor = Color.secondary.opacity(edgeVisibility * 0.6)
+            let lineWidth = 1.0 + (edge.weight * 0.5)
             
             context.stroke(path, with: .color(edgeColor), lineWidth: lineWidth)
         }
@@ -294,15 +301,18 @@ struct KnowledgeGraphCanvasView: View {
             let isDragged = draggedNode?.id == node.id
             
             let currentNodeSize = nodeSize * (isSelected ? 1.2 : (isDragged ? 1.1 : 1.0))
+            
+            // Use node position directly (should be in canvas coordinates)
+            let nodePos = CGPoint(x: node.position.x, y: node.position.y)
             let nodeRect = CGRect(
-                x: node.position.x - currentNodeSize/2,
-                y: node.position.y - currentNodeSize/2,
+                x: nodePos.x - currentNodeSize/2,
+                y: nodePos.y - currentNodeSize/2,
                 width: currentNodeSize,
                 height: currentNodeSize
             )
             
-            // Node color
-            let nodeColor = node.type.color.opacity(isSelected ? 0.9 : 0.7)
+            // Node color based on type
+            let nodeColor = node.type.color.opacity(isSelected ? 0.9 : 0.8)
             
             // Draw node circle
             context.fill(
@@ -311,26 +321,26 @@ struct KnowledgeGraphCanvasView: View {
             )
             
             // Draw node border
+            let borderColor = isSelected ? Color.primary : Color.secondary.opacity(0.8)
             context.stroke(
                 Path(ellipseIn: nodeRect),
-                with: .color(isSelected ? Color.primary : Color.secondary),
+                with: .color(borderColor),
                 lineWidth: isSelected ? 3 : 1.5
             )
             
             // Draw node label
+            let labelText = Text(node.label.count > 15 ? String(node.label.prefix(15)) + "..." : node.label)
+                .font(.system(size: max(10, currentNodeSize * 0.2)))
+                .foregroundColor(.primary)
+            
             let labelRect = CGRect(
-                x: node.position.x - 80,
-                y: node.position.y + currentNodeSize/2 + 8,
-                width: 160,
+                x: nodePos.x - 60,
+                y: nodePos.y + currentNodeSize/2 + 4,
+                width: 120,
                 height: 20
             )
             
-            context.draw(
-                Text(node.label)
-                    .font(.caption)
-                    .foregroundColor(.primary),
-                in: labelRect
-            )
+            context.draw(labelText, in: labelRect)
         }
     }
     
@@ -399,6 +409,135 @@ struct KnowledgeGraphCanvasView: View {
             return .constant(node)
         }
         return $minimalGraphData.nodes[index]
+    }
+    
+    private func initializeNodePositions() {
+        // Check if nodes need position initialization
+        let nodesNeedPositioning = minimalGraphData.nodes.allSatisfy { node in
+            node.position.x == 0 && node.position.y == 0
+        }
+        
+        guard nodesNeedPositioning && !minimalGraphData.nodes.isEmpty else { return }
+        
+        print("🎯 Initializing node positions for \(minimalGraphData.nodes.count) nodes")
+        
+        // Generate positions using a force-directed layout
+        generateForceDirectedLayout()
+        
+        print("✅ Node positions initialized")
+    }
+    
+    private func generateForceDirectedLayout() {
+        let nodeCount = minimalGraphData.nodes.count
+        guard nodeCount > 0 else { return }
+        
+        // Canvas dimensions for positioning
+        let canvasWidth: CGFloat = 800
+        let canvasHeight: CGFloat = 600
+        let centerX = canvasWidth / 2
+        let centerY = canvasHeight / 2
+        
+        // For small graphs, use a simple circular layout
+        if nodeCount <= 20 {
+            generateCircularLayout(centerX: centerX, centerY: centerY, radius: min(canvasWidth, canvasHeight) * 0.3)
+            return
+        }
+        
+        // For larger graphs, use a force-directed approach
+        let iterations = 50
+        let springLength: CGFloat = 100
+        let springStrength: CGFloat = 0.1
+        let repulsionForce: CGFloat = 1000
+        let damping: CGFloat = 0.9
+        
+        // Initialize random positions
+        for index in minimalGraphData.nodes.indices {
+            let angle = Double.random(in: 0...(2 * Double.pi))
+            let radius = Double.random(in: 50...200)
+            
+            minimalGraphData.nodes[index].position = CGPoint(
+                x: centerX + CGFloat(cos(angle) * radius),
+                y: centerY + CGFloat(sin(angle) * radius)
+            )
+        }
+        
+        // Run force-directed layout iterations
+        for _ in 0..<iterations {
+            var forces: [CGPoint] = Array(repeating: .zero, count: nodeCount)
+            
+            // Calculate repulsion forces between all node pairs
+            for i in 0..<nodeCount {
+                for j in (i+1)..<nodeCount {
+                    let node1Pos = minimalGraphData.nodes[i].position
+                    let node2Pos = minimalGraphData.nodes[j].position
+                    
+                    let dx = node2Pos.x - node1Pos.x
+                    let dy = node2Pos.y - node1Pos.y
+                    let distance = sqrt(dx*dx + dy*dy)
+                    
+                    if distance > 0 {
+                        let force = repulsionForce / (distance * distance)
+                        let fx = (dx / distance) * force
+                        let fy = (dy / distance) * force
+                        
+                        forces[i].x -= fx
+                        forces[i].y -= fy
+                        forces[j].x += fx
+                        forces[j].y += fy
+                    }
+                }
+            }
+            
+            // Calculate attraction forces for connected nodes
+            for edge in minimalGraphData.edges {
+                guard let sourceIndex = minimalGraphData.nodes.firstIndex(where: { $0.id == edge.sourceId }),
+                      let targetIndex = minimalGraphData.nodes.firstIndex(where: { $0.id == edge.targetId }) else {
+                    continue
+                }
+                
+                let sourcePos = minimalGraphData.nodes[sourceIndex].position
+                let targetPos = minimalGraphData.nodes[targetIndex].position
+                
+                let dx = targetPos.x - sourcePos.x
+                let dy = targetPos.y - sourcePos.y
+                let distance = sqrt(dx*dx + dy*dy)
+                
+                if distance > 0 {
+                    let force = springStrength * (distance - springLength)
+                    let fx = (dx / distance) * force
+                    let fy = (dy / distance) * force
+                    
+                    forces[sourceIndex].x += fx
+                    forces[sourceIndex].y += fy
+                    forces[targetIndex].x -= fx
+                    forces[targetIndex].y -= fy
+                }
+            }
+            
+            // Apply forces with damping
+            for index in minimalGraphData.nodes.indices {
+                let newX = minimalGraphData.nodes[index].position.x + forces[index].x * damping
+                let newY = minimalGraphData.nodes[index].position.y + forces[index].y * damping
+                
+                // Keep nodes within canvas bounds
+                let clampedX = max(-canvasWidth/2, min(canvasWidth*1.5, newX))
+                let clampedY = max(-canvasHeight/2, min(canvasHeight*1.5, newY))
+                
+                minimalGraphData.nodes[index].position = CGPoint(x: clampedX, y: clampedY)
+            }
+        }
+    }
+    
+    private func generateCircularLayout(centerX: CGFloat, centerY: CGFloat, radius: CGFloat) {
+        let nodeCount = minimalGraphData.nodes.count
+        
+        for (index, _) in minimalGraphData.nodes.enumerated() {
+            let angle = 2 * Double.pi * Double(index) / Double(nodeCount)
+            let x = centerX + radius * CGFloat(cos(angle))
+            let y = centerY + radius * CGFloat(sin(angle))
+            
+            minimalGraphData.nodes[index].position = CGPoint(x: x, y: y)
+        }
     }
 }
 

@@ -914,9 +914,359 @@ def generate_knowledge_graph_from_sources(
             'metadata': {}
         }
 
-def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topic, depth="moderate"):
+# MARK: - Helper Functions for Enhanced Learning Plan Generation
+
+def extract_meaningful_concepts_from_sources(sources: List[Dict[str, Any]], topic: str) -> List[Dict[str, Any]]:
+    """Extract meaningful, educational concepts from source titles and content."""
+    concepts = []
+    
+    for source in sources:
+        title = source.get('title', '')
+        content = source.get('content', '')
+        url = source.get('url', '')
+        
+        # Extract concepts from title (these are usually the most meaningful)
+        title_concepts = extract_concepts_from_title(title, topic)
+        
+        # Extract concepts from content sections
+        content_concepts = extract_concepts_from_content(content, topic)
+        
+        # Combine and deduplicate
+        for concept in title_concepts + content_concepts:
+            if concept not in [c['name'] for c in concepts]:
+                concepts.append({
+                    'name': concept,
+                    'source_title': title,
+                    'source_url': url,
+                    'context': extract_context_for_concept(concept, content, title),
+                    'importance': calculate_concept_importance(concept, title, content)
+                })
+    
+    # Sort by importance and return top concepts
+    concepts.sort(key=lambda x: x['importance'], reverse=True)
+    return concepts[:100]  # Limit to top 100 meaningful concepts
+
+def extract_concepts_from_title(title: str, topic: str) -> List[str]:
+    """Extract educational concepts from article titles."""
+    concepts = []
+    
+    # Clean title
+    title = re.sub(r'[^\w\s-]', '', title)
+    
+    # Look for key educational patterns
+    educational_patterns = [
+        r'(?:Introduction to|Understanding|Guide to|Overview of|Fundamentals of)\s+([A-Z][^:]+)',
+        r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Explained|Tutorial|Guide|Basics)',
+        r'How to\s+([A-Z][^:]+)',
+        r'What is\s+([A-Z][^?]+)',
+        r'(?:The|A)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Method|Approach|Framework|Model|Theory)'
+    ]
+    
+    for pattern in educational_patterns:
+        matches = re.findall(pattern, title, re.IGNORECASE)
+        for match in matches:
+            concept = match.strip()
+            if len(concept) > 3 and concept.lower() not in ['the', 'and', 'or', 'but']:
+                concepts.append(concept)
+    
+    # Also extract noun phrases from the title
+    words = title.split()
+    for i in range(len(words)):
+        for length in [2, 3, 4]:  # 2-4 word phrases
+            if i + length <= len(words):
+                phrase = ' '.join(words[i:i+length])
+                if (any(char.isupper() for char in phrase) and 
+                    not phrase.lower().startswith(('a ', 'an ', 'the ', 'and ', 'or ', 'but '))):
+                    concepts.append(phrase.title())
+    
+    return list(set(concepts))
+
+def extract_concepts_from_content(content: str, topic: str) -> List[str]:
+    """Extract educational concepts from content sections."""
+    concepts = []
+    
+    # Look for section headings and key concepts
+    lines = content.split('\n')
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines and very short lines
+        if len(line) < 5:
+            continue
+            
+        # Look for headings (often contain key concepts)
+        if (line.isupper() or 
+            any(line.startswith(marker) for marker in ['#', '##', '###', '•', '-', '*']) or
+            line.endswith(':')):
+            clean_line = re.sub(r'[#•\-*:]+', '', line).strip()
+            if len(clean_line) > 3:
+                concepts.append(clean_line.title())
+        
+        # Look for definition patterns
+        definition_patterns = [
+            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+is\s+defined\s+as',
+            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+refers\s+to',
+            r'The\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:is|are|can be)',
+            r'([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:involves|includes|consists of)'
+        ]
+        
+        for pattern in definition_patterns:
+            matches = re.findall(pattern, line)
+            for match in matches:
+                if len(match) > 3:
+                    concepts.append(match.strip())
+    
+    return list(set(concepts))
+
+def extract_context_for_concept(concept: str, content: str, title: str) -> str:
+    """Extract relevant context for a concept from content."""
+    # Find sentences containing the concept
+    sentences = re.split(r'[.!?]+', content.lower())
+    concept_lower = concept.lower()
+    
+    relevant_sentences = []
+    for sentence in sentences:
+        if concept_lower in sentence:
+            relevant_sentences.append(sentence.strip())
+    
+    if relevant_sentences:
+        return '. '.join(relevant_sentences[:2]) + '.'  # First 2 relevant sentences
+    else:
+        # Fall back to title context
+        return f"Related to {title}"
+
+def calculate_concept_importance(concept: str, title: str, content: str) -> float:
+    """Calculate importance score for a concept."""
+    score = 0.0
+    
+    # Higher score if concept appears in title
+    if concept.lower() in title.lower():
+        score += 3.0
+    
+    # Higher score based on frequency in content
+    frequency = content.lower().count(concept.lower())
+    score += min(frequency * 0.5, 2.0)  # Cap frequency bonus
+    
+    # Higher score for longer, more specific concepts
+    word_count = len(concept.split())
+    if word_count >= 2:
+        score += word_count * 0.3
+    
+    # Higher score for educational keywords
+    educational_keywords = ['method', 'approach', 'framework', 'theory', 'principle', 'concept', 'model']
+    if any(keyword in concept.lower() for keyword in educational_keywords):
+        score += 1.0
+    
+    return score
+
+def map_nodes_to_meaningful_concepts(
+    node_dict: Dict[str, Any], 
+    source_concepts: List[Dict[str, Any]], 
+    sources: List[Dict[str, Any]]
+) -> Dict[str, Any]:
+    """Map graph nodes to meaningful concepts from sources."""
+    enhanced_concepts = {}
+    
+    for node_id, node in node_dict.items():
+        node_label = node.get('label', '').lower()
+        
+        # Find best matching concept from sources
+        best_match = None
+        best_score = 0.0
+        
+        for concept in source_concepts:
+            concept_name = concept['name'].lower()
+            
+            # Calculate similarity score
+            score = 0.0
+            
+            # Exact match
+            if node_label == concept_name:
+                score = 5.0
+            # Partial match
+            elif node_label in concept_name or concept_name in node_label:
+                score = 3.0
+            # Word overlap
+            else:
+                node_words = set(node_label.split())
+                concept_words = set(concept_name.split())
+                overlap = len(node_words & concept_words)
+                if overlap > 0:
+                    score = overlap / max(len(node_words), len(concept_words))
+            
+            if score > best_score:
+                best_score = score
+                best_match = concept
+        
+        if best_match and best_score > 0.3:
+            # Use the meaningful concept from sources
+            enhanced_concepts[node_id] = {
+                'name': best_match['name'],
+                'type': node.get('type', 'concept'),
+                'description': generate_concept_description(best_match, sources),
+                'resources': generate_enhanced_resources(best_match, sources),
+                'source_references': [best_match['source_title']],
+                'context': best_match['context']
+            }
+        else:
+            # Fall back to node label but enhance it
+            enhanced_name = node.get('label', 'Unknown Concept').title()
+            enhanced_concepts[node_id] = {
+                'name': enhanced_name,
+                'type': node.get('type', 'concept'),
+                'description': f"Key concept related to {enhanced_name}",
+                'resources': generate_basic_resources(enhanced_name),
+                'source_references': [],
+                'context': ''
+            }
+    
+    return enhanced_concepts
+
+def generate_concept_description(concept: Dict[str, Any], sources: List[Dict[str, Any]]) -> str:
+    """Generate a meaningful description for a concept."""
+    base_description = concept.get('context', '')
+    
+    if not base_description or len(base_description) < 20:
+        # Generate based on concept name and source title
+        concept_name = concept['name']
+        source_title = concept.get('source_title', '')
+        
+        if 'method' in concept_name.lower():
+            return f"{concept_name} is a systematic approach discussed in '{source_title}' for solving specific problems or achieving particular outcomes."
+        elif 'theory' in concept_name.lower():
+            return f"{concept_name} is a theoretical framework explored in '{source_title}' that provides explanations and predictions about related phenomena."
+        elif 'framework' in concept_name.lower():
+            return f"{concept_name} is a structured framework presented in '{source_title}' for organizing and approaching complex topics."
+        else:
+            return f"{concept_name} is a key concept detailed in '{source_title}' with important implications for understanding the broader topic."
+    
+    return base_description
+
+def generate_enhanced_resources(concept: Dict[str, Any], sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Generate enhanced learning resources based on actual sources."""
+    resources = []
+    
+    concept_name = concept['name']
+    source_title = concept.get('source_title', '')
+    source_url = concept.get('source_url', '')
+    
+    # Primary source
+    if source_title and source_url:
+        resources.append({
+            'type': 'Primary Source',
+            'title': source_title,
+            'description': f"Original source material covering {concept_name}",
+            'url': source_url,
+            'verified': True
+        })
+    
+    # Related concepts from same domain
+    related_sources = [s for s in sources if concept_name.lower() in s.get('title', '').lower()]
+    for related_source in related_sources[:2]:  # Limit to 2 related sources
+        if related_source.get('url') != source_url:  # Don't duplicate primary source
+            resources.append({
+                'type': 'Related Reading',
+                'title': related_source.get('title', ''),
+                'description': f"Additional perspective on {concept_name}",
+                'url': related_source.get('url', ''),
+                'verified': True
+            })
+    
+    # Add suggested learning resources based on concept type
+    if 'method' in concept_name.lower() or 'approach' in concept_name.lower():
+        resources.append({
+            'type': 'Tutorial',
+            'title': f"Step-by-Step Guide to {concept_name}",
+            'description': f"Practical tutorial implementing {concept_name}",
+            'verified': False
+        })
+    
+    return resources
+
+def generate_basic_resources(concept_name: str) -> List[Dict[str, Any]]:
+    """Generate basic resources for concepts without source matches."""
+    return [{
+        'type': 'Overview',
+        'title': f"Introduction to {concept_name}",
+        'description': f"Foundational overview of {concept_name} concepts and principles",
+        'verified': False
+    }]
+
+def calculate_enhanced_time_estimate(concept: Dict[str, Any], depth: str, importance_score: float) -> int:
+    """Calculate enhanced time estimate based on concept complexity and depth."""
+    base_times = {
+        'quick': 2,
+        'moderate': 4,
+        'comprehensive': 8
+    }
+    
+    base_time = base_times.get(depth, 4)
+    
+    # Adjust based on concept complexity
+    concept_name = concept.get('name', '').lower()
+    complexity_multiplier = 1.0
+    
+    if any(keyword in concept_name for keyword in ['theory', 'framework', 'methodology']):
+        complexity_multiplier = 1.5
+    elif any(keyword in concept_name for keyword in ['method', 'approach', 'technique']):
+        complexity_multiplier = 1.3
+    elif any(keyword in concept_name for keyword in ['basic', 'introduction', 'overview']):
+        complexity_multiplier = 0.8
+    
+    # Adjust based on importance (higher importance = more depth needed)
+    importance_multiplier = 1.0 + (importance_score * 0.3)
+    
+    # Adjust based on available resources
+    resources_count = len(concept.get('resources', []))
+    if resources_count > 2:
+        complexity_multiplier *= 1.2  # More resources = more comprehensive study
+    
+    total_time = int(base_time * complexity_multiplier * importance_multiplier)
+    return max(1, min(total_time, 20))  # Cap between 1-20 hours
+
+def create_source_bibliography(sources: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Create a bibliography of sources used in the learning plan."""
+    bibliography = []
+    
+    for i, source in enumerate(sources, 1):
+        bibliography.append({
+            'id': i,
+            'title': source.get('title', 'Untitled Source'),
+            'url': source.get('url', ''),
+            'type': determine_source_type(source),
+            'description': source.get('content', '')[:200] + '...' if source.get('content', '') else '',
+            'relevance_score': source.get('score', 0.0)
+        })
+    
+    return bibliography
+
+def determine_source_type(source: Dict[str, Any]) -> str:
+    """Determine the type of source based on URL and content."""
+    url = source.get('url', '').lower()
+    title = source.get('title', '').lower()
+    
+    if 'arxiv.org' in url or 'paper' in title:
+        return 'Academic Paper'
+    elif 'wikipedia.org' in url:
+        return 'Encyclopedia'
+    elif 'tutorial' in title or 'guide' in title:
+        return 'Tutorial'
+    elif 'blog' in url or 'medium.com' in url:
+        return 'Blog Post'
+    elif 'news' in url:
+        return 'News Article'
+    else:
+        return 'Web Article'
+
+def generate_learning_plan_from_minimal_subgraph(
+    minimal_subgraph: Dict[str, Any], 
+    sources: List[Dict[str, Any]], 
+    topic: str, 
+    depth: str = "moderate"
+) -> Dict[str, Any]:
     """
-    Generate a detailed, structured learning plan from the minimal subgraph.
+    Generate a detailed, structured learning plan from the minimal subgraph and source materials.
     
     Args:
         minimal_subgraph: Dictionary containing nodes and edges from minimal subgraph
@@ -930,10 +1280,15 @@ def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topi
     try:
         import networkx as nx
         from collections import defaultdict
-        import json
+        import re
         
-        print(f"🎓 Generating learning plan for topic: {topic}")
+        print(f"🎓 Generating enhanced learning plan for topic: {topic}")
         print(f"📊 Minimal subgraph: {len(minimal_subgraph.get('nodes', []))} nodes, {len(minimal_subgraph.get('edges', []))} edges")
+        print(f"📚 Available sources: {len(sources)} documents")
+        
+        # Extract meaningful concepts from sources
+        source_concepts = extract_meaningful_concepts_from_sources(sources, topic)
+        print(f"🧠 Extracted {len(source_concepts)} meaningful concepts from sources")
         
         # Extract nodes and edges from minimal subgraph
         nodes = minimal_subgraph.get('nodes', [])
@@ -956,9 +1311,11 @@ def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topi
             if source_id in node_dict and target_id in node_dict:
                 G.add_edge(source_id, target_id, **edge)
         
+        # Map graph nodes to meaningful concepts using source content
+        enhanced_concepts = map_nodes_to_meaningful_concepts(node_dict, source_concepts, sources)
+        
         # Perform topological analysis for learning order
         try:
-            # For learning order, we want to find foundation concepts first
             centrality_scores = nx.degree_centrality(G)
             betweenness_scores = nx.betweenness_centrality(G)
             
@@ -975,10 +1332,9 @@ def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topi
             
         except Exception as e:
             print(f"⚠️ Centrality analysis failed: {e}")
-            # Fall back to simple ordering
-            ordered_nodes = [(node.get('id', ''), 1.0) for node in nodes]
+            ordered_nodes = [(node_id, 1.0) for node_id in node_dict.keys()]
         
-        # Group concepts by type and importance
+        # Group enhanced concepts by type and importance
         concept_groups = {
             'foundation': [],  # High centrality, core concepts
             'intermediate': [],  # Medium centrality, connecting concepts  
@@ -986,34 +1342,38 @@ def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topi
             'practical': []  # Insights and applications
         }
         
-        # Categorize concepts based on type and centrality
+        # Categorize concepts based on centrality and enhanced information
         for node_id, score in ordered_nodes:
-            node = node_dict.get(node_id, {})
-            concept_name = node.get('label', 'Unknown Concept')
-            concept_type = node.get('type', 'concept')
-            properties = node.get('properties', {})
+            if node_id not in enhanced_concepts:
+                continue
+                
+            enhanced_concept = enhanced_concepts[node_id]
+            concept_type = enhanced_concept.get('type', 'concept')
             
-            # Determine learning category
-            if score > 0.7 or concept_type == 'concept':
+            # Determine learning category based on centrality and concept complexity
+            if score > 0.7 or any(keyword in enhanced_concept['name'].lower() 
+                                  for keyword in ['fundamental', 'basic', 'introduction', 'overview']):
                 category = 'foundation'
             elif score > 0.4 or concept_type == 'entity':
                 category = 'intermediate'  
-            elif concept_type == 'insight':
+            elif concept_type == 'insight' or any(keyword in enhanced_concept['name'].lower() 
+                                                  for keyword in ['application', 'practice', 'implementation']):
                 category = 'practical'
             else:
                 category = 'advanced'
             
             # Add time estimates based on depth and complexity
-            time_estimate = calculate_time_estimate(concept_type, depth, score)
+            time_estimate = calculate_enhanced_time_estimate(enhanced_concept, depth, score)
             
             concept_info = {
-                'name': concept_name,
+                'name': enhanced_concept['name'],
                 'type': concept_type,
-                'description': properties.get('description', f'Core concept related to {concept_name}'),
+                'description': enhanced_concept['description'],
                 'time_estimate': time_estimate,
                 'importance_score': score,
-                'connections': get_concept_connections(node_id, G, node_dict),
-                'resources': generate_concept_resources(concept_name, properties)
+                'connections': get_concept_connections(node_id, G, enhanced_concepts),
+                'resources': enhanced_concept['resources'],
+                'source_references': enhanced_concept.get('source_references', [])
             }
             
             concept_groups[category].append(concept_info)
@@ -1028,19 +1388,27 @@ def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topi
         
         total_time = sum(phase_times.values())
         
+        # Create source bibliography
+        source_bibliography = create_source_bibliography(sources)
+        
         # Generate structured learning plan
         learning_plan = {
             'topic': topic,
             'depth': depth,
             'total_estimated_time': total_time,
-            'total_concepts': len(nodes),
+            'total_concepts': len([c for concepts in concept_groups.values() for c in concepts]),
             'phase_breakdown': phase_times,
             'concept_groups': concept_groups,
             'sources_used': len(sources),
-            'learning_path_rationale': f"Concepts ordered by centrality analysis (PageRank + Degree) to ensure proper foundational understanding before advanced topics."
+            'source_bibliography': source_bibliography,
+            'learning_path_rationale': (
+                f"Learning path designed using centrality analysis of {len(nodes)} key concepts. "
+                f"Concepts are ordered to ensure foundational understanding before advanced topics, "
+                f"with direct connections to {len(sources)} verified source materials."
+            )
         }
         
-        print(f"✅ Learning plan generated: {total_time} hours across {len(nodes)} concepts")
+        print(f"✅ Enhanced learning plan generated: {total_time} hours across {learning_plan['total_concepts']} concepts")
         return learning_plan
         
     except Exception as e:
@@ -1054,7 +1422,7 @@ def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topi
             'sources_used': len(sources) if sources else 0
         }
 
-def calculate_time_estimate(concept_type, depth, importance_score):
+def calculate_time_estimate(concept_type: str, depth: str, importance_score: float) -> int:
     """Calculate time estimate for learning a concept based on type, depth, and importance."""
     base_times = {
         'concept': {'quick': 2, 'moderate': 4, 'comprehensive': 8},
@@ -1070,19 +1438,20 @@ def calculate_time_estimate(concept_type, depth, importance_score):
     
     return int(base_time * importance_multiplier)
 
-def get_concept_connections(node_id, graph, node_dict):
+def get_concept_connections(node_id: str, graph: Any, enhanced_concepts: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Get related concepts for a given node."""
     connections = []
     for neighbor in graph.neighbors(node_id):
-        neighbor_node = node_dict.get(neighbor, {})
-        connections.append({
-            'name': neighbor_node.get('label', 'Unknown'),
-            'type': neighbor_node.get('type', 'concept'),
-            'relationship': 'related_to'  # Could be enhanced with edge labels
-        })
+        if neighbor in enhanced_concepts:
+            neighbor_concept = enhanced_concepts[neighbor]
+            connections.append({
+                'name': neighbor_concept.get('name', 'Unknown'),
+                'type': neighbor_concept.get('type', 'concept'),
+                'relationship': 'related_to'  # Could be enhanced with edge labels
+            })
     return connections[:5]  # Limit to top 5 connections
 
-def generate_concept_resources(concept_name, properties):
+def generate_concept_resources(concept_name: str, properties: Dict[str, Any]) -> List[Dict[str, Any]]:
     """Generate learning resources for a concept."""
     resources = []
     
