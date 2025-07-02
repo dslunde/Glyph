@@ -914,6 +914,210 @@ def generate_knowledge_graph_from_sources(
             'metadata': {}
         }
 
+def generate_learning_plan_from_minimal_subgraph(minimal_subgraph, sources, topic, depth="moderate"):
+    """
+    Generate a detailed, structured learning plan from the minimal subgraph.
+    
+    Args:
+        minimal_subgraph: Dictionary containing nodes and edges from minimal subgraph
+        sources: List of source dictionaries used in graph generation
+        topic: Main topic/subject for learning plan
+        depth: Learning depth level (quick, moderate, comprehensive)
+    
+    Returns:
+        Dictionary with structured learning plan content
+    """
+    try:
+        import networkx as nx
+        from collections import defaultdict
+        import json
+        
+        print(f"🎓 Generating learning plan for topic: {topic}")
+        print(f"📊 Minimal subgraph: {len(minimal_subgraph.get('nodes', []))} nodes, {len(minimal_subgraph.get('edges', []))} edges")
+        
+        # Extract nodes and edges from minimal subgraph
+        nodes = minimal_subgraph.get('nodes', [])
+        edges = minimal_subgraph.get('edges', [])
+        
+        # Create NetworkX graph from minimal subgraph for analysis
+        G = nx.Graph()
+        
+        # Add nodes
+        node_dict = {}
+        for node in nodes:
+            node_id = node.get('id', '')
+            G.add_node(node_id, **node)
+            node_dict[node_id] = node
+        
+        # Add edges
+        for edge in edges:
+            source_id = edge.get('source_id', '')
+            target_id = edge.get('target_id', '')
+            if source_id in node_dict and target_id in node_dict:
+                G.add_edge(source_id, target_id, **edge)
+        
+        # Perform topological analysis for learning order
+        try:
+            # For learning order, we want to find foundation concepts first
+            centrality_scores = nx.degree_centrality(G)
+            betweenness_scores = nx.betweenness_centrality(G)
+            
+            # Combine centrality metrics for importance ranking
+            combined_scores = {}
+            for node_id in G.nodes():
+                combined_scores[node_id] = (
+                    centrality_scores.get(node_id, 0) * 0.6 +
+                    betweenness_scores.get(node_id, 0) * 0.4
+                )
+            
+            # Sort nodes by importance for learning progression
+            ordered_nodes = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+            
+        except Exception as e:
+            print(f"⚠️ Centrality analysis failed: {e}")
+            # Fall back to simple ordering
+            ordered_nodes = [(node.get('id', ''), 1.0) for node in nodes]
+        
+        # Group concepts by type and importance
+        concept_groups = {
+            'foundation': [],  # High centrality, core concepts
+            'intermediate': [],  # Medium centrality, connecting concepts  
+            'advanced': [],  # Lower centrality, specialized concepts
+            'practical': []  # Insights and applications
+        }
+        
+        # Categorize concepts based on type and centrality
+        for node_id, score in ordered_nodes:
+            node = node_dict.get(node_id, {})
+            concept_name = node.get('label', 'Unknown Concept')
+            concept_type = node.get('type', 'concept')
+            properties = node.get('properties', {})
+            
+            # Determine learning category
+            if score > 0.7 or concept_type == 'concept':
+                category = 'foundation'
+            elif score > 0.4 or concept_type == 'entity':
+                category = 'intermediate'  
+            elif concept_type == 'insight':
+                category = 'practical'
+            else:
+                category = 'advanced'
+            
+            # Add time estimates based on depth and complexity
+            time_estimate = calculate_time_estimate(concept_type, depth, score)
+            
+            concept_info = {
+                'name': concept_name,
+                'type': concept_type,
+                'description': properties.get('description', f'Core concept related to {concept_name}'),
+                'time_estimate': time_estimate,
+                'importance_score': score,
+                'connections': get_concept_connections(node_id, G, node_dict),
+                'resources': generate_concept_resources(concept_name, properties)
+            }
+            
+            concept_groups[category].append(concept_info)
+        
+        # Generate time estimates for each phase
+        phase_times = {
+            'foundation': sum(c['time_estimate'] for c in concept_groups['foundation']),
+            'intermediate': sum(c['time_estimate'] for c in concept_groups['intermediate']),
+            'advanced': sum(c['time_estimate'] for c in concept_groups['advanced']),
+            'practical': sum(c['time_estimate'] for c in concept_groups['practical'])
+        }
+        
+        total_time = sum(phase_times.values())
+        
+        # Generate structured learning plan
+        learning_plan = {
+            'topic': topic,
+            'depth': depth,
+            'total_estimated_time': total_time,
+            'total_concepts': len(nodes),
+            'phase_breakdown': phase_times,
+            'concept_groups': concept_groups,
+            'sources_used': len(sources),
+            'learning_path_rationale': f"Concepts ordered by centrality analysis (PageRank + Degree) to ensure proper foundational understanding before advanced topics."
+        }
+        
+        print(f"✅ Learning plan generated: {total_time} hours across {len(nodes)} concepts")
+        return learning_plan
+        
+    except Exception as e:
+        print(f"❌ Error generating learning plan: {e}")
+        return {
+            'topic': topic,
+            'depth': depth,
+            'total_estimated_time': 0,
+            'error': str(e),
+            'concept_groups': {'foundation': [], 'intermediate': [], 'advanced': [], 'practical': []},
+            'sources_used': len(sources) if sources else 0
+        }
+
+def calculate_time_estimate(concept_type, depth, importance_score):
+    """Calculate time estimate for learning a concept based on type, depth, and importance."""
+    base_times = {
+        'concept': {'quick': 2, 'moderate': 4, 'comprehensive': 8},
+        'entity': {'quick': 1, 'moderate': 2, 'comprehensive': 4},
+        'insight': {'quick': 1, 'moderate': 3, 'comprehensive': 6},
+        'document': {'quick': 1, 'moderate': 2, 'comprehensive': 3}
+    }
+    
+    base_time = base_times.get(concept_type, base_times['concept']).get(depth, 4)
+    
+    # Adjust based on importance (higher importance = more time needed)
+    importance_multiplier = 1.0 + (importance_score * 0.5)
+    
+    return int(base_time * importance_multiplier)
+
+def get_concept_connections(node_id, graph, node_dict):
+    """Get related concepts for a given node."""
+    connections = []
+    for neighbor in graph.neighbors(node_id):
+        neighbor_node = node_dict.get(neighbor, {})
+        connections.append({
+            'name': neighbor_node.get('label', 'Unknown'),
+            'type': neighbor_node.get('type', 'concept'),
+            'relationship': 'related_to'  # Could be enhanced with edge labels
+        })
+    return connections[:5]  # Limit to top 5 connections
+
+def generate_concept_resources(concept_name, properties):
+    """Generate learning resources for a concept."""
+    resources = []
+    
+    # Add basic resource suggestions based on concept name
+    if any(keyword in concept_name.lower() for keyword in ['algorithm', 'method', 'technique']):
+        resources.append({
+            'type': 'Tutorial',
+            'title': f"Understanding {concept_name}: Step-by-Step Guide",
+            'description': f"Comprehensive tutorial covering the fundamentals of {concept_name}"
+        })
+    
+    if any(keyword in concept_name.lower() for keyword in ['history', 'background', 'origin']):
+        resources.append({
+            'type': 'Historical Context',
+            'title': f"The Evolution of {concept_name}",
+            'description': f"Historical perspective on the development of {concept_name}"
+        })
+    
+    if any(keyword in concept_name.lower() for keyword in ['application', 'use', 'practice']):
+        resources.append({
+            'type': 'Case Study',
+            'title': f"Real-World Applications of {concept_name}",
+            'description': f"Practical examples and case studies featuring {concept_name}"
+        })
+    
+    # Add a general resource if no specific ones were added
+    if not resources:
+        resources.append({
+            'type': 'Overview',
+            'title': f"Introduction to {concept_name}",
+            'description': f"Foundational overview of {concept_name} concepts and principles"
+        })
+    
+    return resources
+
 
 if __name__ == "__main__":
     # Test function

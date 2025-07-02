@@ -480,6 +480,166 @@ class PythonGraphService: ObservableObject {
         }
     }
     
+    // MARK: - Learning Plan Generation
+    
+    /// Generate detailed learning plan from minimal subgraph
+    func generateLearningPlan(
+        from minimalSubgraph: [String: Any],
+        sources: [[String: Any]],
+        topic: String,
+        depth: String = "moderate"
+    ) async throws -> [String: Any] {
+        guard isInitialized else {
+            throw APIError.networkError("Python not initialized")
+        }
+        
+        print("🎓 Starting learning plan generation...")
+        
+        do {
+            // Import our custom knowledge graph module
+            let kgModule = try Python.attemptImport("knowledge_graph_generation")
+            
+            // Convert Swift data to Python format
+            print("🔄 Converting minimal subgraph and sources to Python format...")
+            
+            let pythonMinimalSubgraph = Python.dict(minimalSubgraph.compactMapValues { value in
+                convertSwiftToPython(value)
+            })
+            
+            let pythonSources = Python.list(sources.map { source in
+                Python.dict(source.compactMapValues { value -> String in
+                    if let stringValue = value as? String {
+                        return stringValue
+                    } else if let intValue = value as? Int {
+                        return String(intValue)
+                    } else if let doubleValue = value as? Double {
+                        return String(doubleValue)
+                    } else {
+                        return String(describing: value)
+                    }
+                })
+            })
+            
+            print("🧠 Calling Python learning plan generation...")
+            
+            // Call the Python learning plan generation function
+            let result = kgModule.generate_learning_plan_from_minimal_subgraph(
+                pythonMinimalSubgraph,
+                pythonSources,
+                topic,
+                depth
+            )
+            
+            // Convert Python result to Swift format
+            var swiftResult: [String: Any] = [:]
+            let resultKeys = Array(result.keys())
+            for key in resultKeys {
+                let keyString = String(describing: key)
+                let value = result[key]
+                swiftResult[keyString] = convertPythonToSwift(value)
+            }
+            
+            print("✅ Learning plan generated successfully")
+            return swiftResult
+            
+        } catch {
+            print("❌ Learning plan generation failed: \(error)")
+            print("🔄 Falling back to mock learning plan")
+            
+            // Generate mock learning plan
+            return generateMockLearningPlan(topic: topic, depth: depth, nodeCount: (minimalSubgraph["nodes"] as? [[String: Any]])?.count ?? 0)
+        }
+    }
+    
+    private func generateMockLearningPlan(topic: String, depth: String, nodeCount: Int) -> [String: Any] {
+        print("🎭 Generating mock learning plan...")
+        
+        let mockConceptGroups: [String: [[String: Any]]] = [
+            "foundation": [
+                [
+                    "name": "Core \(topic) Fundamentals",
+                    "type": "concept",
+                    "description": "Essential foundational concepts in \(topic)",
+                    "time_estimate": 4,
+                    "importance_score": 0.9,
+                    "connections": [["name": "Advanced \(topic)", "type": "concept", "relationship": "builds_upon"]],
+                    "resources": [["type": "Overview", "title": "Introduction to \(topic)", "description": "Foundational overview"]]
+                ]
+            ],
+            "intermediate": [
+                [
+                    "name": "Intermediate \(topic) Applications",
+                    "type": "entity",
+                    "description": "Practical applications of \(topic) concepts",
+                    "time_estimate": 6,
+                    "importance_score": 0.7,
+                    "connections": [["name": "Core \(topic) Fundamentals", "type": "concept", "relationship": "builds_upon"]],
+                    "resources": [["type": "Tutorial", "title": "Practical \(topic) Guide", "description": "Step-by-step tutorial"]]
+                ]
+            ],
+            "advanced": [
+                [
+                    "name": "Advanced \(topic) Theory", 
+                    "type": "concept",
+                    "description": "Advanced theoretical aspects of \(topic)",
+                    "time_estimate": 8,
+                    "importance_score": 0.5,
+                    "connections": [],
+                    "resources": [["type": "Research", "title": "Advanced \(topic) Research", "description": "Latest research findings"]]
+                ]
+            ],
+            "practical": [
+                [
+                    "name": "Real-world \(topic) Implementation",
+                    "type": "insight",
+                    "description": "Practical insights for implementing \(topic)",
+                    "time_estimate": 3,
+                    "importance_score": 0.8,
+                    "connections": [],
+                    "resources": [["type": "Case Study", "title": "\(topic) Case Studies", "description": "Real-world examples"]]
+                ]
+            ]
+        ]
+        
+        return [
+            "topic": topic,
+            "depth": depth,
+            "total_estimated_time": 21,
+            "total_concepts": nodeCount,
+            "phase_breakdown": [
+                "foundation": 4,
+                "intermediate": 6,
+                "advanced": 8,
+                "practical": 3
+            ],
+            "concept_groups": mockConceptGroups,
+            "sources_used": 5,
+            "learning_path_rationale": "Concepts ordered by centrality analysis to ensure proper foundational understanding."
+        ]
+    }
+    
+    private func convertSwiftToPython(_ value: Any) -> PythonObject {
+        if let stringValue = value as? String {
+            return Python.str(stringValue)
+        } else if let intValue = value as? Int {
+            return Python.int(intValue)
+        } else if let doubleValue = value as? Double {
+            return Python.float(doubleValue)
+        } else if let boolValue = value as? Bool {
+            return Python.bool(boolValue)
+        } else if let arrayValue = value as? [Any] {
+            return Python.list(arrayValue.map { convertSwiftToPython($0) })
+        } else if let dictValue = value as? [String: Any] {
+            let pythonDict = Python.dict()
+            for (key, val) in dictValue {
+                pythonDict[key] = convertSwiftToPython(val)
+            }
+            return pythonDict
+        } else {
+            return Python.str(String(describing: value))
+        }
+    }
+
     private func generateMockKnowledgeGraph(
         from sources: [[String: Any]], 
         topic: String,

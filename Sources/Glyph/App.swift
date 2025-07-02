@@ -1657,14 +1657,21 @@ struct ProjectDetailView: View {
                     }
                     .tag(0)
                 
-                // Knowledge Graph Tab
-                KnowledgeGraphView(project: project)
-                    .environmentObject(projectManager)
+                // Knowledge Graph Tab  
+                KnowledgeGraphCanvasView(project: project)
                     .tabItem {
                         Image(systemName: "network")
                         Text("Knowledge Graph")
                     }
                     .tag(1)
+                
+                // Chat Assistant Tab
+                ChatView(project: project)
+                    .tabItem {
+                        Image(systemName: "message")
+                        Text("Chat")
+                    }
+                    .tag(2)
             }
         }
         .sheet(isPresented: $showingProjectInfo) {
@@ -2366,99 +2373,7 @@ struct LoginView: View {
 
 // MARK: - Tab Views
 
-struct LearningPlanView: View {
-    let project: Project
-    @State private var learningPlanText: String
-    @State private var isEditing = false
-    
-    init(project: Project) {
-        self.project = project
-        self._learningPlanText = State(initialValue: project.learningPlan)
-    }
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Learning Plan")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button(action: { isEditing.toggle() }) {
-                    Text(isEditing ? "View" : "Edit")
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            
-            Divider()
-            
-            // Content
-            if isEditing {
-                // Rich text editor
-                ScrollView {
-                    TextEditor(text: $learningPlanText)
-                        .font(.body)
-                        .padding()
-                }
-            } else {
-                // Rendered markdown view
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Simple markdown rendering for demo
-                        ForEach(learningPlanText.components(separatedBy: "\n"), id: \.self) { line in
-                            if line.hasPrefix("# ") {
-                                Text(String(line.dropFirst(2)))
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            } else if line.hasPrefix("## ") {
-                                Text(String(line.dropFirst(3)))
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, 8)
-                            } else if line.hasPrefix("### ") {
-                                Text(String(line.dropFirst(4)))
-                                    .font(.title3)
-                                    .fontWeight(.medium)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, 4)
-                            } else if line.hasPrefix("- ") {
-                                HStack(alignment: .top) {
-                                    Text("•")
-                                        .font(.body)
-                                    Text(String(line.dropFirst(2)))
-                                        .font(.body)
-                                    Spacer()
-                                }
-                                .padding(.leading, 16)
-                            } else if line.hasPrefix("1. ") || line.hasPrefix("2. ") || line.hasPrefix("3. ") || line.hasPrefix("4. ") {
-                                HStack(alignment: .top) {
-                                    Text(String(line.prefix(3)))
-                                        .font(.body)
-                                        .fontWeight(.medium)
-                                    Text(String(line.dropFirst(3)))
-                                        .font(.body)
-                                    Spacer()
-                                }
-                                .padding(.leading, 16)
-                            } else if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text(line)
-                                    .font(.body)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .padding()
-                }
-            }
-        }
-    }
-}
+// LearningPlanView is now implemented in Sources/Glyph/Views/LearningPlanView.swift
 
 struct KnowledgeGraphView: View {
     let project: Project
