@@ -233,7 +233,21 @@ class LangSmithService: ObservableObject {
                 if httpResponse.statusCode >= 200 && httpResponse.statusCode < 300 {
                     // Success
                 } else {
-                    print("⚠️ LangSmith API error: \(httpResponse.statusCode)")
+                    // Provide specific error context based on status code
+                    let errorMessage: String
+                    switch httpResponse.statusCode {
+                    case 401:
+                        errorMessage = "⚠️ LangSmith authentication failed (401) - API key may be invalid or expired. Tracing will continue locally."
+                    case 403:
+                        errorMessage = "⚠️ LangSmith access forbidden (403) - check API key permissions. Tracing will continue locally."
+                    case 429:
+                        errorMessage = "⚠️ LangSmith rate limit exceeded (429) - too many requests. Tracing will continue locally."
+                    case 500...599:
+                        errorMessage = "⚠️ LangSmith server error (\(httpResponse.statusCode)) - service may be temporarily unavailable. Tracing will continue locally."
+                    default:
+                        errorMessage = "⚠️ LangSmith API error (\(httpResponse.statusCode)) - unexpected response. Tracing will continue locally."
+                    }
+                    print(errorMessage)
                 }
             }
         } catch {

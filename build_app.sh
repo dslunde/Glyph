@@ -116,6 +116,7 @@ echo "📦 Installing custom Python modules..."
 CUSTOM_PYTHON_FILES=(
     "Sources/Glyph/PythonAPIService.py"
     "Sources/Glyph/source_collection_workflow.py"
+    "Sources/Glyph/knowledge_graph_generation.py"
 )
 
 for file in "${CUSTOM_PYTHON_FILES[@]}"; do
@@ -127,6 +128,15 @@ for file in "${CUSTOM_PYTHON_FILES[@]}"; do
         echo "⚠️  Custom Python file not found: $file"
     fi
 done
+
+# Copy .env file to app bundle
+echo "🔑 Copying environment configuration..."
+if [ -f ".env" ]; then
+    cp ".env" "$APP_DIR/Contents/Resources/.env"
+    echo "✅ Environment file copied to app bundle"
+else
+    echo "⚠️  .env file not found - API features will use fallback"
+fi
 
 echo "✅ Python $PYTHON_VERSION embedded successfully!"
 
@@ -178,9 +188,9 @@ else
 fi
 
 # Create a symlink in Applications folder for easy access
-echo "🔗 Creating link for easy access..."
-DESKTOP_APP="$HOME/Desktop/$APP_NAME.app"
-ln -sf "$(pwd)/$APP_DIR" "$DESKTOP_APP"
+# echo "🔗 Creating link for easy access..."
+# DESKTOP_APP="$HOME/Desktop/$APP_NAME.app"
+# ln -sf "$(pwd)/$APP_DIR" "$DESKTOP_APP"
 
 echo "✅ App bundle created successfully!"
 echo "📍 Location: $APP_DIR"

@@ -205,7 +205,18 @@ enum SensitivityLevel: String, CaseIterable, Codable {
 struct GraphData: Codable {
     var nodes: [GraphNode] = []
     var edges: [GraphEdge] = []
+    var minimalSubgraph: MinimalSubgraph? = nil
     var metadata: GraphMetadata = GraphMetadata()
+    
+    init() {}
+}
+
+/// Minimal subgraph focused on most important nodes
+struct MinimalSubgraph: Codable {
+    var nodes: [GraphNode] = []
+    var edges: [GraphEdge] = []
+    var selectionCriteria: String = ""
+    var topologicalOrder: [UUID] = []
     
     init() {}
 }
