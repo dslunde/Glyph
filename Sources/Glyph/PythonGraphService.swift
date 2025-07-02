@@ -500,13 +500,19 @@ class PythonGraphService: ObservableObject {
         
         do {
             // Call the enhanced source processing module
-            let result = try Python.attemptImport("enhanced_source_processing")
-            let processFunc = result["process_manual_sources_sync"]
+            let enhancedModule = try Python.attemptImport("enhanced_source_processing")
             
             // Get OpenAI API key for AI-powered URL filtering
             let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
             
-            let pythonResult = processFunc(filePaths, urls, topic, maxPages, openaiApiKey)
+            // Call the Python function directly on the module (like knowledge graph generation does)
+            let pythonResult = enhancedModule.process_manual_sources_sync(
+                filePaths, 
+                urls, 
+                topic, 
+                maxPages, 
+                openaiApiKey
+            )
             
             // Convert Python result to Swift dictionary
             let swiftResult = convertPythonToSwift(pythonResult)
