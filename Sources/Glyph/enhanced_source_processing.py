@@ -749,8 +749,44 @@ def process_manual_sources_sync(
     Returns:
         Dictionary containing processed sources, metadata, and performance stats
     """
-    processor = EnhancedSourceProcessor(openai_api_key=openai_api_key)
-    return processor.process_manual_sources(file_paths, urls, topic, max_pages)
+    print(f"🔧 Enhanced source processing called:")
+    print(f"   📁 Files/folders: {len(file_paths)}")
+    print(f"   🌐 URLs: {len(urls)}")
+    print(f"   📝 Topic: {topic}")
+    print(f"   🔑 AI filtering: {'enabled' if openai_api_key else 'disabled'}")
+    print(f"   📚 Dependencies: requests={REQUESTS_AVAILABLE}, langchain={LANGCHAIN_AVAILABLE}")
+    
+    try:
+        processor = EnhancedSourceProcessor(openai_api_key=openai_api_key)
+        result = processor.process_manual_sources(file_paths, urls, topic, max_pages)
+        print(f"✅ Enhanced processing completed successfully:")
+        print(f"   📊 Total sources: {result.get('total_sources', 0)}")
+        print(f"   ⏱️  Processing time: {result.get('processing_time_seconds', 0):.2f}s")
+        if result.get('metadata', {}).get('errors'):
+            print(f"   ⚠️  Errors: {len(result['metadata']['errors'])}")
+        return result
+    except Exception as e:
+        print(f"❌ Enhanced processing failed: {str(e)}")
+        if 'requests' in str(e).lower() or 'beautifulsoup' in str(e).lower():
+            print("   💡 Missing web scraping dependencies - URL processing disabled")
+        elif 'langchain' in str(e).lower():
+            print("   💡 Missing AI dependencies - using heuristic URL filtering")
+        
+        # Return error result instead of crashing
+        return {
+            'sources': [],
+            'metadata': {
+                'files_processed': 0,
+                'folders_scanned': 0,
+                'urls_expanded': 0,
+                'total_discovered_pages': 0,
+                'errors': [f"Processing failed: {str(e)}"],
+                'performance_stats': {}
+            },
+            'total_sources': 0,
+            'processing_time_seconds': 0.0,
+            'performance_stats': {}
+        }
 
 
 if __name__ == "__main__":

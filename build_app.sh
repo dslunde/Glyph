@@ -99,17 +99,34 @@ fi
 echo "📦 Installing required Python packages..."
 EMBEDDED_SITE_PACKAGES="$EMBEDDED_PYTHON/lib/python3.13/site-packages"
 
-# Install core packages needed by the app
-"$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
-    --upgrade --no-deps --no-cache-dir \
-    numpy==2.3.1 \
-    networkx==3.5 \
-    requests>=2.31.0 \
-    python-dotenv>=1.0.0 \
-    openai>=1.0.0 \
-    tavily-python>=0.3.0 || {
-    echo "⚠️  Some packages failed to install, continuing..."
-}
+# Install all packages from requirements.txt
+if [ -f "requirements.txt" ]; then
+    echo "📋 Installing packages from requirements.txt..."
+    echo "📦 Package list:"
+    grep -v '^#' requirements.txt | grep -v '^$' | head -10 | sed 's/^/   ✓ /'
+    if [ $(grep -v '^#' requirements.txt | grep -v '^$' | wc -l) -gt 10 ]; then
+        echo "   ... and $(( $(grep -v '^#' requirements.txt | grep -v '^$' | wc -l) - 10 )) more packages"
+    fi
+    echo ""
+    
+    "$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
+        --upgrade --no-cache-dir -r requirements.txt || {
+        echo "⚠️  Some packages failed to install, continuing..."
+    }
+else
+    echo "⚠️  requirements.txt not found, installing core packages..."
+    # Fallback to core packages if requirements.txt is missing
+    "$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
+        --upgrade --no-deps --no-cache-dir \
+        numpy==2.3.1 \
+        networkx==3.5 \
+        requests>=2.31.0 \
+        python-dotenv>=1.0.0 \
+        openai>=1.0.0 \
+        tavily-python>=0.3.0 || {
+        echo "⚠️  Some packages failed to install, continuing..."
+    }
+fi
 
 # Copy custom Python modules to embedded site-packages
 echo "📦 Installing custom Python modules..."
@@ -202,7 +219,7 @@ echo "   ✓ Python Version: $PYTHON_VERSION"
 echo "   ✓ Python Path: Contents/Python"
 echo "   ✓ App Sandbox: Disabled"
 echo "   ✓ Library Validation: Disabled"
-echo "   ✓ Core Packages: numpy, networkx, requests, openai, tavily-python"
+echo "   ✓ Packages: All packages from requirements.txt installed"
 echo ""
 echo "🚀 To run your app:"
 echo "   Double-click: $DESKTOP_APP"
