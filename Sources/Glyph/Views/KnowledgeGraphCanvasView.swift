@@ -73,7 +73,8 @@ struct KnowledgeGraphCanvasView: View {
                         // Graph Canvas
                         Canvas { context, size in
                             context.clipToLayer(opacity: 1) { context in
-                                // Apply zoom and pan transformations
+                                // Apply transformations: translate to center, then apply pan and zoom
+                                context.translateBy(x: size.width / 2, y: size.height / 2)
                                 context.translateBy(x: panOffset.width, y: panOffset.height)
                                 context.scaleBy(x: zoomScale, y: zoomScale)
                                 
@@ -415,6 +416,7 @@ struct KnowledgeGraphCanvasView: View {
             let centerX = (minX + maxX) / 2
             let centerY = (minY + maxY) / 2
             
+            // Since Canvas now centers automatically, we just need to offset by the graph center
             panOffset = CGSize(width: -centerX, height: -centerY)
         } else {
             panOffset = .zero
