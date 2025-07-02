@@ -500,11 +500,7 @@ class PythonGraphService: ObservableObject {
         
         do {
             // Call the enhanced source processing module
-            guard let pythonInstance = python else {
-                throw APIError.networkError("Python not available")
-            }
-            
-            let result = pythonInstance.attemptImport("enhanced_source_processing")
+            let result = try Python.attemptImport("enhanced_source_processing")
             let processFunc = result["process_manual_sources_sync"]
             
             // Get OpenAI API key for AI-powered URL filtering

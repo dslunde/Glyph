@@ -346,37 +346,98 @@ class EnhancedSourceProcessor:
             return []
     
     def extract_url_content(self, url: str) -> Optional[Dict[str, Any]]:
-        """Extract content from URL."""
+        """Extract content from a single URL."""
+        print(f"🔍 DEBUG: extract_url_content called with URL: {url}")
+        
+        if not REQUESTS_AVAILABLE:
+            print("❌ DEBUG: requests library not available")
+            return None
+            
         try:
-            headers = {'User-Agent': 'Mozilla/5.0 (compatible; Glyph/1.0)'}
-            response = requests.get(url, headers=headers, timeout=10)
+            print(f"🔄 DEBUG: Making HTTP request to {url}")
+            # Use requests with timeout and user agent
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            }
+            
+            response = requests.get(url, timeout=10, headers=headers)
             response.raise_for_status()
             
-            soup = BeautifulSoup(response.content, 'html.parser')
+            print(f"✅ DEBUG: HTTP request successful, status code: {response.status_code}")
+            print(f"📄 DEBUG: Content length: {len(response.text)} characters")
             
-            title = soup.find('title')
-            title_text = title.get_text().strip() if title else self._generate_title_from_url(url)
+            # Parse with BeautifulSoup
+            print("🔄 DEBUG: Parsing content with BeautifulSoup")
+            soup = BeautifulSoup(response.text, 'html.parser')
             
-            content = self._extract_main_content(soup)
+            # Remove script and style elements
+            for script in soup(["script", "style", "nav", "footer", "header", "aside"]):
+                script.decompose()
             
-            source = {
-                'title': title_text,
-                'content': content[:5000],
+            # Extract title
+            title_elem = soup.find('title')
+            title = title_elem.get_text().strip() if title_elem else self._generate_title_from_url(url)
+            print(f"📝 DEBUG: Extracted title: {title}")
+            
+            # Extract main content
+            content_selectors = [
+                'article', 'main', '[role="main"]', '.content', '.post-content', 
+                '.entry-content', '.article-content', '.post-body', '.content-body',
+                '#content', '#main-content', '.main-content'
+            ]
+            
+            content_text = ""
+            for selector in content_selectors:
+                content_elem = soup.select_one(selector)
+                if content_elem:
+                    content_text = content_elem.get_text(separator=' ', strip=True)
+                    print(f"✅ DEBUG: Found content using selector '{selector}', length: {len(content_text)}")
+                    break
+            
+            # Fallback to body if no content found
+            if not content_text:
+                print("🔄 DEBUG: No content found with selectors, falling back to body")
+                body = soup.find('body')
+                if body:
+                    content_text = body.get_text(separator=' ', strip=True)
+                    print(f"📄 DEBUG: Body content length: {len(content_text)}")
+                else:
+                    print("❌ DEBUG: No body element found")
+                    content_text = response.text[:2000]
+            
+            # Clean and limit content
+            content_text = ' '.join(content_text.split())  # Clean whitespace
+            if len(content_text) > 5000:
+                content_text = content_text[:5000] + "..."
+                print(f"✂️ DEBUG: Content truncated to 5000 characters")
+            
+            word_count = len(content_text.split())
+            print(f"📊 DEBUG: Final word count: {word_count}")
+            
+            if word_count < 10:
+                print(f"⚠️ DEBUG: Content too short ({word_count} words), might indicate extraction failure")
+                print(f"🔍 DEBUG: Content preview: '{content_text[:200]}...'")
+            
+            result = {
+                'title': title,
+                'content': content_text,
                 'url': url,
                 'score': 0.8,
                 'published_date': '',
-                'query': f"URL: {url}",
+                'query': f"URL content: {url}",
                 'reliability_score': 75,
                 'source_type': 'url',
-                'word_count': len(content.split()),
-                'domain': urllib.parse.urlparse(url).netloc
+                'word_count': word_count
             }
             
-            print(f"🌐 Extracted: {title_text}")
-            return source
+            print(f"✅ DEBUG: Returning source: title='{title}', content_length={len(content_text)}, word_count={word_count}")
+            return result
             
+        except requests.exceptions.RequestException as e:
+            print(f"❌ DEBUG: Request failed for {url}: {e}")
+            return None
         except Exception as e:
-            print(f"❌ Failed to extract {url}: {e}")
+            print(f"❌ DEBUG: Unexpected error processing {url}: {e}")
             return None
     
     def generate_intelligent_filename(self, filename: str) -> str:
@@ -472,10 +533,6 @@ class EnhancedSourceProcessor:
             return base_path == '' or url_path.startswith(base_path) or base_path.startswith(url_path.rstrip('/'))
         except:
             return False
-    
-
-    
-
     
     def _generate_title_from_url(self, url: str) -> str:
         """Generate title from URL."""

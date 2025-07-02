@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import PythonKit
+import os.log
 
 @main
 struct GlyphApp: App {
@@ -877,6 +879,11 @@ struct SourceCollectionView: View {
     // MARK: - Helper Methods
     
     private func setupManualSources() {
+        print("🔍 DEBUG: setupManualSources() called")
+        print("🔍 DEBUG: projectConfig.filePaths = \(projectConfig.filePaths)")
+        print("🔍 DEBUG: projectConfig.urls = \(projectConfig.urls)")
+        print("🔍 DEBUG: projectManager.isOnlineMode = \(projectManager.isOnlineMode)")
+        
         manualSources.removeAll()
         
         // Add file paths
@@ -887,6 +894,7 @@ struct SourceCollectionView: View {
                 status: .validating
             )
             manualSources.append(source)
+            print("🔍 DEBUG: Added file source: \(filePath)")
         }
         
         // Add URLs
@@ -897,15 +905,21 @@ struct SourceCollectionView: View {
                 status: projectManager.isOnlineMode ? .validating : .invalid
             )
             manualSources.append(source)
+            print("🔍 DEBUG: Added URL source: \(url), status: \(source.status)")
         }
+        
+        print("🔍 DEBUG: Total manual sources added: \(manualSources.count)")
         
         // Start enhanced processing and validation
         Task {
+            print("🔍 DEBUG: Starting processManualSourcesWithEnhancement task")
             await processManualSourcesWithEnhancement()
         }
     }
     
     private func processManualSourcesWithEnhancement() async {
+        print("🔍 DEBUG: processManualSourcesWithEnhancement() called")
+        
         // First do basic validation
         await validateManualSources()
         
@@ -913,9 +927,15 @@ struct SourceCollectionView: View {
         let validFilePaths = projectConfig.filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         let validUrls = projectConfig.urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
         
+        print("🔍 DEBUG: validFilePaths = \(validFilePaths.count), validUrls = \(validUrls.count)")
+        
         if !validFilePaths.isEmpty || !validUrls.isEmpty {
             do {
                 print("🚀 Running enhanced source processing...")
+                print("🔍 DEBUG: About to call processManualSources with:")
+                print("   - filePaths: \(validFilePaths)")
+                print("   - urls: \(validUrls)")
+                print("   - topic: \(projectConfig.topic)")
                 
                 let enhancedResult = try await projectManager.pythonService.processManualSources(
                     filePaths: validFilePaths,
@@ -924,17 +944,22 @@ struct SourceCollectionView: View {
                     maxPages: 10
                 )
                 
+                print("🔍 DEBUG: Enhanced processing returned: \(enhancedResult)")
+                
                 // Extract enhanced sources
                 if let sources = enhancedResult["sources"] as? [[String: Any]] {
                     await MainActor.run {
                         // Store enhanced sources for knowledge graph generation
                         enhancedManualSources = sources
                         print("✅ Enhanced processing complete: \(sources.count) total sources")
+                        print("🔍 DEBUG: Stored \(enhancedManualSources.count) enhanced sources")
                         
                         // Update UI to show enhancement results
                         if let metadata = enhancedResult["metadata"] as? [String: Any] {
                             let filesProcessed = metadata["files_processed"] as? Int ?? 0
                             let urlsExpanded = metadata["total_discovered_pages"] as? Int ?? 0
+                            
+                            print("🔍 DEBUG: Metadata - files: \(filesProcessed), urls: \(urlsExpanded)")
                             
                             // Update manual source status to show enhancement
                             for index in manualSources.indices {
@@ -950,6 +975,12 @@ struct SourceCollectionView: View {
                         
                         updateContinueState()
                     }
+                } else {
+                    print("❌ DEBUG: No sources found in enhanced result")
+                    await MainActor.run {
+                        enhancedManualSources = []
+                        updateContinueState()
+                    }
                 }
                 
             } catch {
@@ -960,6 +991,8 @@ struct SourceCollectionView: View {
                     updateContinueState()
                 }
             }
+        } else {
+            print("🔍 DEBUG: No valid sources to process")
         }
     }
     
@@ -1235,12 +1268,18 @@ struct SourceCollectionView: View {
     }
     
     private func createProjectWithSources() {
+        print("🔍 DEBUG: createProjectWithSources() called")
+        
         // Collect approved sources
         let approvedSources = searchResults.filter { $0.status == .approved }
         let validManualSources = manualSources.filter { $0.status == .valid }
         
+        print("🔍 DEBUG: approvedSources = \(approvedSources.count), validManualSources = \(validManualSources.count)")
+        
         // Create learning plan with approved sources instead of Lorem Ipsum
         let learningPlan = generateLearningPlanWithSources(approvedSources: approvedSources, manualSources: validManualSources)
+        
+        print("🔍 DEBUG: About to create project with custom learning plan")
         
         // Create the project
         projectManager.createProjectWithCustomLearningPlan(
@@ -1257,8 +1296,12 @@ struct SourceCollectionView: View {
             learningPlan: learningPlan
         )
         
+        print("🔍 DEBUG: Project created, now checking for knowledge graph generation")
+        
         // Start knowledge graph generation if we have approved sources
         if !approvedSources.isEmpty {
+            print("🔍 DEBUG: Found approved sources, generating knowledge graph from them")
+            
             // Convert SearchResults to the format expected by knowledge graph generation
             let sourcesForKG = approvedSources.map { searchResult in
                 [
@@ -1294,11 +1337,50 @@ struct SourceCollectionView: View {
             
             let allSources = sourcesForKG + manualSourcesForKG
             
+            print("🔍 DEBUG: Total sources for KG: \(allSources.count)")
+            
             if let createdProject = projectManager.selectedProject {
+                print("🔍 DEBUG: Calling startKnowledgeGraphGeneration with \(allSources.count) sources")
                 projectManager.startKnowledgeGraphGeneration(from: allSources, for: createdProject)
+            } else {
+                print("❌ DEBUG: No selected project found!")
             }
+        } else if !validManualSources.isEmpty || !enhancedManualSources.isEmpty {
+            print("🔍 DEBUG: No approved search sources, but we have manual sources - using them for KG")
+            
+            // Use manual sources only for knowledge graph generation
+            let manualSourcesForKG: [[String: Any]]
+            if !enhancedManualSources.isEmpty {
+                print("🚀 Using enhanced manual sources for knowledge graph: \(enhancedManualSources.count) sources")
+                manualSourcesForKG = enhancedManualSources
+            } else {
+                print("🔄 Using basic manual sources for knowledge graph: \(validManualSources.count) sources")
+                manualSourcesForKG = validManualSources.map { manualSource in
+                    [
+                        "title": manualSource.type == .file ? "File Source" : "URL Source", 
+                        "content": "Manual source: \(manualSource.path)",
+                        "url": manualSource.path,
+                        "score": 0.8,
+                        "published_date": "",
+                        "query": projectConfig.topic,
+                        "reliability_score": 80
+                    ] as [String: Any]
+                }
+            }
+            
+            print("🔍 DEBUG: Total manual sources for KG: \(manualSourcesForKG.count)")
+            
+            if let createdProject = projectManager.selectedProject {
+                print("🔍 DEBUG: Calling startKnowledgeGraphGeneration with \(manualSourcesForKG.count) manual sources")
+                projectManager.startKnowledgeGraphGeneration(from: manualSourcesForKG, for: createdProject)
+            } else {
+                print("❌ DEBUG: No selected project found!")
+            }
+        } else {
+            print("🔍 DEBUG: No sources available for knowledge graph generation!")
         }
         
+        print("🔍 DEBUG: About to dismiss the SourceCollectionView")
         dismiss()
     }
     
