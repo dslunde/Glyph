@@ -254,6 +254,9 @@ class PythonGraphService: ObservableObject {
         print("🏗️ Starting knowledge graph generation...")
         
         do {
+            // Set environment variable to indicate app bundle mode
+            setenv("APP_BUNDLE_MODE", "1", 1)
+            
             // Import our custom knowledge graph module
             let kgModule = try Python.attemptImport("knowledge_graph_generation")
             

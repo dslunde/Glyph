@@ -19,6 +19,7 @@ import json
 import pickle
 import gzip
 import hashlib
+import tempfile
 from typing import List, Dict, Any, Optional, Tuple, Set
 from datetime import datetime
 from collections import defaultdict, Counter
@@ -100,10 +101,29 @@ except ImportError:
 class KnowledgeGraphBuilder:
     """Main class for building knowledge graphs from source collections."""
     
-    def __init__(self, cache_dir: str = "./graph_cache"):
+    def __init__(self, cache_dir: Optional[str] = None):
         """Initialize the knowledge graph builder."""
-        self.cache_dir = cache_dir
-        os.makedirs(cache_dir, exist_ok=True)
+        if cache_dir is None:
+            # Use appropriate cache directory for macOS app bundles
+            if os.getenv('APP_BUNDLE_MODE'):
+                # Running in app bundle - use user cache directory
+                home_dir = os.path.expanduser("~")
+                self.cache_dir = os.path.join(home_dir, "Library", "Caches", "com.glyph.knowledge-graph-explorer")
+            else:
+                # Development mode - use local cache
+                self.cache_dir = "./graph_cache"
+        else:
+            self.cache_dir = cache_dir
+            
+        # Create cache directory with proper error handling
+        try:
+            os.makedirs(self.cache_dir, exist_ok=True)
+            print(f"📁 Cache directory: {self.cache_dir}")
+        except OSError as e:
+            print(f"⚠️ Failed to create cache directory {self.cache_dir}: {e}")
+            # Fallback to temp directory
+            self.cache_dir = tempfile.mkdtemp(prefix="glyph_cache_")
+            print(f"📁 Using fallback cache directory: {self.cache_dir}")
         
         # Initialize NLP components
         self.sentence_transformer = None
