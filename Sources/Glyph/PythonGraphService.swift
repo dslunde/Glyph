@@ -507,7 +507,10 @@ class PythonGraphService: ObservableObject {
             let result = pythonInstance.attemptImport("enhanced_source_processing")
             let processFunc = result["process_manual_sources_sync"]
             
-            let pythonResult = processFunc(filePaths, urls, topic, maxPages)
+            // Get OpenAI API key for AI-powered URL filtering
+            let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
+            
+            let pythonResult = processFunc(filePaths, urls, topic, maxPages, openaiApiKey)
             
             // Convert Python result to Swift dictionary
             let swiftResult = convertPythonToSwift(pythonResult)
