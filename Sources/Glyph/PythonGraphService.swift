@@ -259,8 +259,13 @@ class PythonGraphService: ObservableObject {
         print("🏗️ Starting knowledge graph generation...")
         
         do {
-            // Set environment variable to indicate app bundle mode
-            setenv("APP_BUNDLE_MODE", "1", 1)
+            // Set environment variable to indicate app bundle mode BEFORE any Python operations
+            if Bundle.main.bundlePath.contains(".app") {
+                setenv("APP_BUNDLE_MODE", "1", 1)
+                print("🎯 Set APP_BUNDLE_MODE for knowledge graph generation")
+            } else {
+                print("🔧 Development mode - not setting APP_BUNDLE_MODE")
+            }
             
             // Import our custom knowledge graph module
             let kgModule = try Python.attemptImport("knowledge_graph_generation")

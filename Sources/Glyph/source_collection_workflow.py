@@ -351,6 +351,22 @@ def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
         print(f"❌ Search failed: {e}")
         state["error_count"] += 1
         
+        # Determine specific reason for fallback
+        fallback_reason = "Unknown error"
+        if "not available" in str(e).lower():
+            fallback_reason = "Tavily API module not available"
+        elif "invalid" in str(e).lower() and "api key" in str(e).lower():
+            fallback_reason = "Invalid or missing Tavily API key"
+        elif "timeout" in str(e).lower():
+            fallback_reason = "API request timeout"
+        elif "rate limit" in str(e).lower():
+            fallback_reason = "API rate limit exceeded"
+        else:
+            fallback_reason = f"API error: {str(e)}"
+        
+        print(f"🔄 FALLBACK REASON: {fallback_reason}")
+        print("   Using mock search results to continue workflow")
+        
         # Generate fallback results
         state["raw_results"] = generate_fallback_search_results(
             state["search_queries"], 
@@ -358,7 +374,7 @@ def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
         )
         
         error_message = AIMessage(
-            content=f"Search failed, using fallback results: {str(e)}"
+            content=f"⚠️ Search fallback activated - {fallback_reason}. Using mock results to continue."
         )
         state["messages"].append(error_message)
     
@@ -456,6 +472,22 @@ Return only a number between 0-100."""
         print(f"❌ Reliability scoring failed: {e}")
         state["error_count"] += 1
         
+        # Determine specific reason for fallback
+        fallback_reason = "Unknown error"
+        if "not available" in str(e).lower():
+            fallback_reason = "OpenAI API module not available"
+        elif "invalid" in str(e).lower() and "api key" in str(e).lower():
+            fallback_reason = "Invalid or missing OpenAI API key"
+        elif "timeout" in str(e).lower():
+            fallback_reason = "OpenAI API request timeout"
+        elif "rate limit" in str(e).lower():
+            fallback_reason = "OpenAI API rate limit exceeded"
+        else:
+            fallback_reason = f"OpenAI API error: {str(e)}"
+        
+        print(f"🔄 RELIABILITY SCORING FALLBACK: {fallback_reason}")
+        print("   Using domain-based scoring algorithm instead")
+        
         # Use fallback scoring for all results
         for result in state["raw_results"]:
             result_copy = result.copy()
@@ -465,7 +497,7 @@ Return only a number between 0-100."""
         state["scored_results"] = scored_results
         
         error_message = AIMessage(
-            content=f"Reliability scoring failed, using fallback: {str(e)}"
+            content=f"⚠️ Reliability scoring fallback - {fallback_reason}. Using domain-based scoring."
         )
         state["messages"].append(error_message)
     

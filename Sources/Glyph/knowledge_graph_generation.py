@@ -109,21 +109,25 @@ class KnowledgeGraphBuilder:
                 # Running in app bundle - use user cache directory
                 home_dir = os.path.expanduser("~")
                 self.cache_dir = os.path.join(home_dir, "Library", "Caches", "com.glyph.knowledge-graph-explorer")
+                print(f"📁 App bundle mode - using cache directory: {self.cache_dir}")
             else:
                 # Development mode - use local cache
                 self.cache_dir = "./graph_cache"
+                print(f"📁 Development mode - using cache directory: {self.cache_dir}")
         else:
             self.cache_dir = cache_dir
+            print(f"📁 Custom cache directory: {self.cache_dir}")
             
         # Create cache directory with proper error handling
         try:
             os.makedirs(self.cache_dir, exist_ok=True)
-            print(f"📁 Cache directory: {self.cache_dir}")
+            print(f"✅ Cache directory ready: {self.cache_dir}")
         except OSError as e:
             print(f"⚠️ Failed to create cache directory {self.cache_dir}: {e}")
-            # Fallback to temp directory
+            # Fallback to temp directory with clear reason
             self.cache_dir = tempfile.mkdtemp(prefix="glyph_cache_")
-            print(f"📁 Using fallback cache directory: {self.cache_dir}")
+            print(f"🔄 FALLBACK: Using temporary cache directory due to permissions issue: {self.cache_dir}")
+            print(f"   Reason: Could not create/access intended cache directory")
         
         # Initialize NLP components
         self.sentence_transformer = None
@@ -507,16 +511,16 @@ class KnowledgeGraphBuilder:
             self.centrality_scores['closeness'] = nx.degree_centrality(self.graph)
     
     def _find_minimal_subgraph(self):
-        """Find minimal subgraph focusing on most important nodes."""
+        """Find minimal subgraph using Minimum Spanning Tree algorithm for cyclical graphs."""
         if not self.centrality_scores or self.graph.number_of_nodes() == 0:
             print("⚠️ No centrality scores available - skipping minimal subgraph")
             return
         
-        print(f"🎯 Finding minimal subgraph for {self.graph.number_of_nodes()} nodes...")
+        print(f"🎯 Finding minimal subgraph using MST for {self.graph.number_of_nodes()} nodes...")
         step_start = datetime.now()
         
-        # Combine centrality scores to find most important nodes
-        print("   📊 Combining centrality scores...")
+        # Step 1: Combine centrality scores to create node importance weights
+        print("   📊 Computing node importance scores...")
         combined_scores = {}
         for node in self.graph.nodes():
             # Weighted combination of centrality measures
@@ -527,59 +531,91 @@ class KnowledgeGraphBuilder:
                 0.1 * self.centrality_scores['closeness'].get(node, 0)
             )
             combined_scores[node] = score
-        print(f"   ✅ Combined scores for {len(combined_scores)} nodes")
+        print(f"   ✅ Computed importance scores for {len(combined_scores)} nodes")
         
-        # Select top nodes (20% of total or max 100)
-        total_nodes = self.graph.number_of_nodes()
-        target_size = min(100, max(10, int(total_nodes * 0.2)))
-        print(f"   🎯 Selecting top {target_size} nodes from {total_nodes} total")
+        # Step 2: Create undirected graph with reciprocal edge weights for MST
+        print("   🔄 Preparing graph for MST with reciprocal weights...")
         
-        top_nodes = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
-        selected_nodes = [node for node, score in top_nodes[:target_size]]
-        print(f"   📋 Selected {len(selected_nodes)} top nodes")
+        # Convert to undirected graph for MST
+        undirected_graph = self.graph.to_undirected()
         
-        # Create subgraph and ensure connectivity
-        print("   🔗 Creating initial subgraph...")
-        self.minimal_subgraph = self.graph.subgraph(selected_nodes).copy()
-        print(f"   ✅ Initial subgraph: {self.minimal_subgraph.number_of_nodes()} nodes, {self.minimal_subgraph.number_of_edges()} edges")
+        # Create new graph with reciprocal weights
+        # High importance edges (high weight) become low cost edges (preferred by MST)
+        mst_graph = nx.Graph()
+        for node in undirected_graph.nodes():
+            mst_graph.add_node(node, **undirected_graph.nodes[node])
         
-        # Check connectivity (simplified approach)
-        components = nx.number_weakly_connected_components(self.minimal_subgraph)
-        print(f"   🔗 Graph has {components} connected components")
+        for u, v, data in undirected_graph.edges(data=True):
+            original_weight = data.get('weight', 1.0)
+            # Convert to reciprocal weight (high importance = low cost)
+            # Add small epsilon to avoid division by zero
+            reciprocal_weight = 1.0 / (original_weight + 1e-6)
+            mst_graph.add_edge(u, v, weight=reciprocal_weight, original_weight=original_weight)
         
-        if components > 5:
-            print("   🔧 Too many components - adding connecting nodes...")
-            # Simple approach: just add a few more highly connected nodes
-            remaining_nodes = [node for node in self.graph.nodes() if node not in selected_nodes]
-            if remaining_nodes:
-                # Sort by degree and add top nodes
-                node_degrees = []
-                for node in remaining_nodes:
-                    try:
-                        degree = self.graph.degree(node)
-                        node_degrees.append((node, degree))
-                    except:
-                        node_degrees.append((node, 0))
-                top_connected = sorted(node_degrees, key=lambda x: x[1], reverse=True)
-                additional_nodes = [node for node, degree in top_connected[:min(10, len(top_connected))]]
-                selected_nodes.extend(additional_nodes)
-                
-                # Recreate subgraph with additional nodes
-                self.minimal_subgraph = self.graph.subgraph(selected_nodes).copy()
-                print(f"   ✅ Added {len(additional_nodes)} connecting nodes")
+        print(f"   ✅ Created MST graph with {mst_graph.number_of_nodes()} nodes, {mst_graph.number_of_edges()} edges")
         
-        # Perform topological sort if possible (for DAG-like structures)
+        # Step 3: Apply Kruskal's Minimum Spanning Tree algorithm
+        print("   🌲 Computing Minimum Spanning Tree...")
         try:
+            # Use NetworkX's MST algorithm (implements Kruskal's algorithm)
+            mst_edges = nx.minimum_spanning_tree(mst_graph, weight='weight', algorithm='kruskal')
+            print(f"   ✅ MST computed with {mst_edges.number_of_nodes()} nodes, {mst_edges.number_of_edges()} edges")
+            
+            # Step 4: Convert back to directed graph with original weights
+            print("   🔄 Converting MST back to directed graph...")
+            self.minimal_subgraph = nx.DiGraph()
+            
+            # Add all nodes from MST
+            for node in mst_edges.nodes():
+                self.minimal_subgraph.add_node(node, **mst_graph.nodes[node])
+            
+            # Add edges with original weights restored
+            for u, v, data in mst_edges.edges(data=True):
+                original_weight = data.get('original_weight', 1.0)
+                
+                # For directed graph, we need to determine edge direction
+                # Use the original graph to find the correct direction
+                if self.graph.has_edge(u, v):
+                    self.minimal_subgraph.add_edge(u, v, weight=original_weight)
+                elif self.graph.has_edge(v, u):
+                    self.minimal_subgraph.add_edge(v, u, weight=original_weight)
+                else:
+                    # If neither direction exists in original, add both
+                    self.minimal_subgraph.add_edge(u, v, weight=original_weight)
+                    self.minimal_subgraph.add_edge(v, u, weight=original_weight)
+            
+            print(f"   ✅ Minimal subgraph created: {self.minimal_subgraph.number_of_nodes()} nodes, {self.minimal_subgraph.number_of_edges()} edges")
+            
+            # Step 5: Verify the result
+            components = nx.number_weakly_connected_components(self.minimal_subgraph)
+            print(f"   🔗 MST result has {components} connected component(s)")
+            
+            # Since it's a spanning tree, it should be connected and acyclic
+            is_connected = nx.is_weakly_connected(self.minimal_subgraph)
+            print(f"   📊 Graph connectivity: {'✅ Connected' if is_connected else '❌ Disconnected'}")
+            
+            # Check if we can now do topological sort
             if nx.is_directed_acyclic_graph(self.minimal_subgraph):
-                topo_order = list(nx.topological_sort(self.minimal_subgraph))  # type: ignore
-                print(f"📋 Topological ordering found with {len(topo_order)} nodes")
+                topo_order = list(nx.topological_sort(self.minimal_subgraph))
+                print(f"   📋 ✅ Topological ordering available with {len(topo_order)} nodes")
             else:
-                print("📋 Graph contains cycles - no topological ordering")
+                print(f"   📋 ⚠️ Graph still contains cycles (unexpected for MST)")
+                
         except Exception as e:
-            print(f"⚠️ Topological sort failed: {e}")
+            print(f"   ❌ MST computation failed: {e}")
+            print("   🔄 Falling back to simple node selection...")
+            
+            # Fallback: select top nodes by importance
+            total_nodes = self.graph.number_of_nodes()
+            target_size = min(50, max(10, int(total_nodes * 0.3)))
+            top_nodes = sorted(combined_scores.items(), key=lambda x: x[1], reverse=True)
+            selected_nodes = [node for node, score in top_nodes[:target_size]]
+            
+            self.minimal_subgraph = self.graph.subgraph(selected_nodes).copy()
+            print(f"   📋 Fallback subgraph: {self.minimal_subgraph.number_of_nodes()} nodes, {self.minimal_subgraph.number_of_edges()} edges")
         
-        print(f"🎯 Minimal subgraph: {self.minimal_subgraph.number_of_nodes()} nodes, "
-              f"{self.minimal_subgraph.number_of_edges()} edges")
+        elapsed = (datetime.now() - step_start).total_seconds()
+        print(f"🎯 Minimal subgraph computation completed in {elapsed:.2f}s")
     
     def _generate_node_embeddings(self):
         """Generate embeddings for nodes using sentence transformers."""
