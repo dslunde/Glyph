@@ -3,6 +3,7 @@ import SwiftUI
 struct KnowledgeGraphCanvasView: View {
     @EnvironmentObject private var projectManager: ProjectManager
     @State private var minimalGraphData: GraphData = GraphData()
+    @State private var originalNodePositions: [UUID: CGPoint] = [:]  // Store original positions for spacing
     @State private var selectedNode: GraphNode?
     @State private var zoomScale: CGFloat = 1.0
     @State private var panOffset: CGSize = .zero
@@ -265,7 +266,9 @@ struct KnowledgeGraphCanvasView: View {
     private func drawEdges(context: GraphicsContext) {
         guard edgeVisibility > 0 else { return }
         
-        for edge in minimalGraphData.edges {
+        print("🔗 Drawing \(minimalGraphData.edges.count) edges with visibility \(edgeVisibility)")
+        
+        for (index, edge) in minimalGraphData.edges.enumerated() {
             guard let sourceNode = minimalGraphData.nodes.first(where: { $0.id == edge.sourceId }),
                   let targetNode = minimalGraphData.nodes.first(where: { $0.id == edge.targetId }) else {
                 continue
@@ -280,11 +283,19 @@ struct KnowledgeGraphCanvasView: View {
                 path.addLine(to: targetPos)
             }
             
-            let edgeColor = Color.secondary.opacity(edgeVisibility * 0.6)
-            let lineWidth = 1.0 + (edge.weight * 0.5)
+            // Make edges more visible: stronger color and better line width
+            let edgeColor = Color.gray.opacity(edgeVisibility * 0.8)  // Changed from secondary to gray with higher opacity
+            let lineWidth = max(1.0, 1.5 + (edge.weight * 1.0))  // Increased minimum width and scaling
+            
+            // Debug first few edges
+            if index < 3 {
+                print("🔗 Edge \(index): from (\(sourcePos.x), \(sourcePos.y)) to (\(targetPos.x), \(targetPos.y)), width=\(lineWidth)")
+            }
             
             context.stroke(path, with: .color(edgeColor), lineWidth: lineWidth)
         }
+        
+        print("✅ Finished drawing \(minimalGraphData.edges.count) edges")
     }
     
     private func drawNodes(context: GraphicsContext) {
@@ -370,6 +381,7 @@ struct KnowledgeGraphCanvasView: View {
             showingNodeDetails = false
             zoomScale = 1.0
             panOffset = .zero
+            originalNodePositions.removeAll()  // Clear original positions for new project
             
             // Load graph data for the new project
             loadProjectGraphData()
@@ -490,25 +502,60 @@ struct KnowledgeGraphCanvasView: View {
         for (index, node) in firstThreeNodes.enumerated() {
             print("🎯 Scaled Node \(index): '\(node.label)' at (\(node.position.x), \(node.position.y))")
         }
+        
+        // Store original positions for spacing calculations
+        originalNodePositions.removeAll()
+        for node in minimalGraphData.nodes {
+            originalNodePositions[node.id] = node.position
+        }
+        print("🔧 Stored \(originalNodePositions.count) original node positions for spacing")
     }
     
     private func applyNodeSpacing() {
-        // Adjust node positions based on spacing multiplier
-        guard !minimalGraphData.nodes.isEmpty else { return }
+        // Adjust node positions based on spacing multiplier using ORIGINAL positions
+        guard !minimalGraphData.nodes.isEmpty, !originalNodePositions.isEmpty else { 
+            print("🔧 Cannot apply spacing: nodes=\(minimalGraphData.nodes.count), original=\(originalNodePositions.count)")
+            return 
+        }
         
-        let centerX = minimalGraphData.nodes.map { $0.position.x }.reduce(0, +) / CGFloat(minimalGraphData.nodes.count)
-        let centerY = minimalGraphData.nodes.map { $0.position.y }.reduce(0, +) / CGFloat(minimalGraphData.nodes.count)
+        print("🔧 Applying node spacing: \(nodeSpacing)x")
+        
+        // Calculate center from ORIGINAL positions
+        let originalPositions = minimalGraphData.nodes.compactMap { originalNodePositions[$0.id] }
+        let centerX = originalPositions.map { $0.x }.reduce(0, +) / CGFloat(originalPositions.count)
+        let centerY = originalPositions.map { $0.y }.reduce(0, +) / CGFloat(originalPositions.count)
+        
+        print("🔧 Original center: (\(centerX), \(centerY))")
         
         for index in minimalGraphData.nodes.indices {
             let node = minimalGraphData.nodes[index]
-            let offsetX = (node.position.x - centerX) * CGFloat(nodeSpacing)
-            let offsetY = (node.position.y - centerY) * CGFloat(nodeSpacing)
             
-            minimalGraphData.nodes[index].position = CGPoint(
-                x: centerX + offsetX,
-                y: centerY + offsetY
+            guard let originalPos = originalNodePositions[node.id] else {
+                print("⚠️ No original position for node \(node.label)")
+                continue
+            }
+            
+            // Calculate spacing from ORIGINAL position relative to original center
+            let originalOffsetX = originalPos.x - centerX
+            let originalOffsetY = originalPos.y - centerY
+            
+            let newOffsetX = originalOffsetX * CGFloat(nodeSpacing)
+            let newOffsetY = originalOffsetY * CGFloat(nodeSpacing)
+            
+            let newPosition = CGPoint(
+                x: centerX + newOffsetX,
+                y: centerY + newOffsetY
             )
+            
+            // Debug first few nodes
+            if index < 3 {
+                print("🔧 Node \(index): original=(\(originalPos.x), \(originalPos.y)) → new=(\(newPosition.x), \(newPosition.y))")
+            }
+            
+            minimalGraphData.nodes[index].position = newPosition
         }
+        
+        print("✅ Node spacing applied: \(nodeSpacing)x")
     }
     
     private func nodeConnections(_ node: GraphNode) -> Int {
