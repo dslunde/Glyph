@@ -41,6 +41,16 @@ class PythonGraphService: ObservableObject {
         
         print("🐍 Configuring Python environment...")
         
+        // CRITICAL: Set APP_BUNDLE_MODE immediately for Python processes
+        if Bundle.main.bundlePath.contains(".app") {
+            setenv("APP_BUNDLE_MODE", "1", 1)
+            print("🎯 Set APP_BUNDLE_MODE=1 for Python environment")
+        } else {
+            // Ensure it's unset in development mode
+            unsetenv("APP_BUNDLE_MODE")
+            print("🔧 Development mode - APP_BUNDLE_MODE unset")
+        }
+        
         // Get the app bundle path
         let bundlePath = Bundle.main.bundlePath
         
@@ -259,13 +269,8 @@ class PythonGraphService: ObservableObject {
         print("🏗️ Starting knowledge graph generation...")
         
         do {
-            // Set environment variable to indicate app bundle mode BEFORE any Python operations
-            if Bundle.main.bundlePath.contains(".app") {
-                setenv("APP_BUNDLE_MODE", "1", 1)
-                print("🎯 Set APP_BUNDLE_MODE for knowledge graph generation")
-            } else {
-                print("🔧 Development mode - not setting APP_BUNDLE_MODE")
-            }
+            // APP_BUNDLE_MODE already set in ensurePythonConfigured()
+            print("🧠 Using previously configured APP_BUNDLE_MODE")
             
             // Import our custom knowledge graph module
             let kgModule = try Python.attemptImport("knowledge_graph_generation")
@@ -313,13 +318,13 @@ class PythonGraphService: ObservableObject {
             
             timeoutTask.cancel() // Cancel timeout if we completed successfully
             
-            // Simulate progress updates since Python callback is complex
-            DispatchQueue.main.async { progressCallback(0.2, "Starting knowledge graph generation") }
-            try await Task.sleep(nanoseconds: 500_000_000)
-            DispatchQueue.main.async { progressCallback(0.5, "Building graph structure") }
-            try await Task.sleep(nanoseconds: 500_000_000)
-            DispatchQueue.main.async { progressCallback(0.8, "Calculating centrality metrics") }
-            try await Task.sleep(nanoseconds: 500_000_000)
+            // Poll for status updates from Python
+            let statusPollingTask = Task {
+                await pollPythonStatusUpdates(progressCallback: progressCallback)
+            }
+            
+            // Cancel status polling when main task completes
+            defer { statusPollingTask.cancel() }
             
             // Extract results from Python dict
             let success = Bool(result["success"]) ?? false
@@ -783,6 +788,63 @@ class PythonGraphService: ObservableObject {
         
         print("   📊 Generated \(results.count) mock LangGraph results")
         return results
+    }
+    
+    // MARK: - Status Monitoring
+    
+    private func pollPythonStatusUpdates(progressCallback: @escaping (Double, String) -> Void) async {
+        let cacheDir: String
+        if Bundle.main.bundlePath.contains(".app") {
+            // App bundle mode
+            let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
+            cacheDir = "\(homeDir)/Library/Caches/com.glyph.knowledge-graph-explorer"
+        } else {
+            // Development mode
+            cacheDir = "./graph_cache"
+        }
+        
+        let statusFile = "\(cacheDir)/kg_status.json"
+        var lastProgress: Double = 0.0
+        
+        while !Task.isCancelled {
+            do {
+                // Check if status file exists and read it
+                if FileManager.default.fileExists(atPath: statusFile) {
+                    let statusData = try Data(contentsOf: URL(fileURLWithPath: statusFile))
+                    if let statusDict = try JSONSerialization.jsonObject(with: statusData) as? [String: Any] {
+                        let progress = statusDict["progress"] as? Double ?? 0.0
+                        let message = statusDict["message"] as? String ?? ""
+                        let completed = statusDict["completed"] as? Bool ?? false
+                        let error = statusDict["error"] as? String
+                        
+                        // Only update if progress has changed
+                        if progress != lastProgress || completed {
+                            lastProgress = progress
+                            DispatchQueue.main.async {
+                                progressCallback(progress, message)
+                            }
+                            
+                            if let error = error {
+                                print("❌ Python status error: \(error)")
+                                break
+                            }
+                            
+                            if completed {
+                                print("✅ Python process completed successfully")
+                                break
+                            }
+                        }
+                    }
+                }
+                
+                // Poll every 200ms
+                try await Task.sleep(nanoseconds: 200_000_000)
+                
+            } catch {
+                // Ignore file reading errors (file might not exist yet)
+                try? await Task.sleep(nanoseconds: 200_000_000)
+            }
+        }
     }
     
     // MARK: - Helper Functions for Python/Swift Conversion

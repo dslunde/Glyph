@@ -20,6 +20,7 @@ import pickle
 import gzip
 import hashlib
 import tempfile
+import uuid
 from typing import List, Dict, Any, Optional, Tuple, Set, Callable
 from datetime import datetime
 from collections import defaultdict, Counter
@@ -129,6 +130,10 @@ class KnowledgeGraphBuilder:
             print(f"🔄 FALLBACK: Using temporary cache directory due to permissions issue: {self.cache_dir}")
             print(f"   Reason: Could not create/access intended cache directory")
         
+        # Status file for Swift communication
+        self.status_file = os.path.join(self.cache_dir, "kg_status.json")
+        self.run_id = str(uuid.uuid4())[:8]  # Short run ID for this session
+        
         # Initialize NLP components
         self.sentence_transformer = None
         self.ner_pipeline = None
@@ -204,6 +209,39 @@ class KnowledgeGraphBuilder:
             self.progress_callback(progress, message)
         if message:
             print(f"📊 {progress:.1%}: {message}")
+        
+        # Write status checkpoint for Swift to read
+        self._write_status_checkpoint(progress, message)
+    
+    def _write_status_checkpoint(self, progress: float, message: str, error: Optional[str] = None):
+        """Write status checkpoint to file for Swift communication."""
+        try:
+            status = {
+                "run_id": self.run_id,
+                "timestamp": datetime.now().isoformat(),
+                "progress": progress,
+                "message": message,
+                "current_step": message.split(":")[1].strip() if ":" in message else message,
+                "completed": progress >= 1.0,
+                "error": error,
+                "nodes_count": self.graph.number_of_nodes() if hasattr(self, 'graph') else 0,
+                "edges_count": self.graph.number_of_edges() if hasattr(self, 'graph') else 0
+            }
+            
+            with open(self.status_file, 'w') as f:
+                json.dump(status, f)
+                
+        except Exception as e:
+            # Don't let status writing break the main process
+            print(f"⚠️ Failed to write status checkpoint: {e}")
+    
+    def _clear_status_file(self):
+        """Clear status file at start of process."""
+        try:
+            if os.path.exists(self.status_file):
+                os.remove(self.status_file)
+        except Exception as e:
+            print(f"⚠️ Failed to clear status file: {e}")
     
     @traceable(name="build_knowledge_graph")
     def build_graph_from_sources(
@@ -213,6 +251,10 @@ class KnowledgeGraphBuilder:
     ) -> Dict[str, Any]:
         """Build knowledge graph from collected sources."""
         print(f"🏗️ Building knowledge graph from {len(sources)} sources...")
+        
+        # Clear status file from any previous runs
+        self._clear_status_file()
+        
         self._update_progress(0.0, "Starting knowledge graph construction")
         
         # Clear previous data
@@ -252,7 +294,12 @@ class KnowledgeGraphBuilder:
             return result
             
         except Exception as e:
-            print(f"❌ Graph construction failed: {e}")
+            error_msg = f"Graph construction failed: {e}"
+            print(f"❌ {error_msg}")
+            
+            # Write error status for Swift to read
+            self._write_status_checkpoint(0.0, "Error occurred", error=error_msg)
+            
             return {
                 "success": False,
                 "error": str(e),
@@ -554,13 +601,79 @@ class KnowledgeGraphBuilder:
         
         print(f"   ✅ Created MST graph with {mst_graph.number_of_nodes()} nodes, {mst_graph.number_of_edges()} edges")
         
-        # Step 3: Apply Kruskal's Minimum Spanning Tree algorithm
-        print("   🌲 Computing Minimum Spanning Tree...")
-        try:
-            # Use NetworkX's MST algorithm (implements Kruskal's algorithm)
+        # Step 3: Handle connected vs disconnected graphs
+        print("   🔍 Analyzing graph connectivity...")
+        components = list(nx.connected_components(mst_graph))
+        print(f"   📊 Found {len(components)} connected component(s)")
+        
+        if len(components) == 1:
+            # Single connected component - standard MST
+            print("   🌲 Computing single Minimum Spanning Tree...")
             mst_edges = nx.minimum_spanning_tree(mst_graph, weight='weight', algorithm='kruskal')
             print(f"   ✅ MST computed with {mst_edges.number_of_nodes()} nodes, {mst_edges.number_of_edges()} edges")
             
+        else:
+            # Multiple components - hybrid approach
+            print(f"   🔗 Multiple components detected - using hybrid MST approach...")
+            
+            # Step 3a: Create MST for each component
+            component_msts = []
+            for i, component in enumerate(components):
+                if len(component) > 1:  # Skip single-node components
+                    component_graph = mst_graph.subgraph(component)
+                    component_mst = nx.minimum_spanning_tree(component_graph, weight='weight', algorithm='kruskal')
+                    component_msts.append(component_mst)
+                    print(f"      🌲 Component {i+1}: MST with {component_mst.number_of_nodes()} nodes, {component_mst.number_of_edges()} edges")
+                else:
+                    # Single node component - create a graph with just that node
+                    single_node = list(component)[0]
+                    single_mst = nx.Graph()
+                    single_mst.add_node(single_node, **mst_graph.nodes[single_node])
+                    component_msts.append(single_mst)
+                    print(f"      🔸 Component {i+1}: Single node {single_node}")
+            
+            # Step 3b: Connect components using highest centrality nodes
+            print(f"   🔗 Connecting {len(component_msts)} components using degree centrality...")
+            
+            # Create combined graph from all MSTs
+            mst_edges = nx.Graph()
+            for component_mst in component_msts:
+                mst_edges = nx.union(mst_edges, component_mst)
+            
+            # Find highest degree centrality node in each component MST
+            component_connectors = []
+            for i, component_mst in enumerate(component_msts):
+                if component_mst.number_of_nodes() > 0:
+                    # Calculate degree centrality within this component
+                    centrality = nx.degree_centrality(component_mst)
+                    if centrality:
+                        best_node = max(centrality.items(), key=lambda x: x[1])[0]
+                        component_connectors.append((best_node, centrality[best_node], i))
+                        print(f"      🎯 Component {i+1} connector: {best_node} (centrality: {centrality[best_node]:.3f})")
+            
+            # Connect components by adding edges between connectors
+            # Use a minimum spanning tree approach on the connectors themselves
+            if len(component_connectors) > 1:
+                print(f"   🔗 Adding {len(component_connectors)-1} inter-component connections...")
+                
+                # Sort connectors by centrality (highest first)
+                component_connectors.sort(key=lambda x: x[1], reverse=True)
+                
+                # Connect each component to the highest centrality component in a star pattern
+                main_connector = component_connectors[0][0]
+                
+                for connector_node, centrality, comp_idx in component_connectors[1:]:
+                    # Add connecting edge with high weight (low reciprocal cost)
+                    connection_weight = 0.1  # High importance connection
+                    mst_edges.add_edge(main_connector, connector_node, 
+                                     weight=connection_weight, 
+                                     original_weight=1.0/connection_weight,  # Very high original weight
+                                     connection_type='inter_component')
+                    print(f"      ➡️  Connected {main_connector} ↔ {connector_node}")
+            
+            print(f"   ✅ Hybrid MST completed: {mst_edges.number_of_nodes()} nodes, {mst_edges.number_of_edges()} edges")
+        
+        try:
             # Step 4: Convert back to directed graph with original weights
             print("   🔄 Converting MST back to directed graph...")
             self.minimal_subgraph = nx.DiGraph()
@@ -572,34 +685,35 @@ class KnowledgeGraphBuilder:
             # Add edges with original weights restored
             for u, v, data in mst_edges.edges(data=True):
                 original_weight = data.get('original_weight', 1.0)
+                connection_type = data.get('connection_type', 'intra_component')
                 
                 # For directed graph, we need to determine edge direction
                 # Use the original graph to find the correct direction
                 if self.graph.has_edge(u, v):
-                    self.minimal_subgraph.add_edge(u, v, weight=original_weight)
+                    self.minimal_subgraph.add_edge(u, v, weight=original_weight, connection_type=connection_type)
                 elif self.graph.has_edge(v, u):
-                    self.minimal_subgraph.add_edge(v, u, weight=original_weight)
+                    self.minimal_subgraph.add_edge(v, u, weight=original_weight, connection_type=connection_type)
                 else:
-                    # If neither direction exists in original, add both
-                    self.minimal_subgraph.add_edge(u, v, weight=original_weight)
-                    self.minimal_subgraph.add_edge(v, u, weight=original_weight)
+                    # For inter-component connections, add both directions
+                    self.minimal_subgraph.add_edge(u, v, weight=original_weight, connection_type=connection_type)
+                    self.minimal_subgraph.add_edge(v, u, weight=original_weight, connection_type=connection_type)
             
             print(f"   ✅ Minimal subgraph created: {self.minimal_subgraph.number_of_nodes()} nodes, {self.minimal_subgraph.number_of_edges()} edges")
             
             # Step 5: Verify the result
-            components = nx.number_weakly_connected_components(self.minimal_subgraph)
-            print(f"   🔗 MST result has {components} connected component(s)")
+            final_components = nx.number_weakly_connected_components(self.minimal_subgraph)
+            print(f"   🔗 Final result has {final_components} connected component(s)")
             
-            # Since it's a spanning tree, it should be connected and acyclic
+            # Check connectivity
             is_connected = nx.is_weakly_connected(self.minimal_subgraph)
-            print(f"   📊 Graph connectivity: {'✅ Connected' if is_connected else '❌ Disconnected'}")
+            print(f"   📊 Graph connectivity: {'✅ Connected' if is_connected else '⚠️ Multiple components'}")
             
             # Check if we can now do topological sort
             if nx.is_directed_acyclic_graph(self.minimal_subgraph):
                 topo_order = list(nx.topological_sort(self.minimal_subgraph))
                 print(f"   📋 ✅ Topological ordering available with {len(topo_order)} nodes")
             else:
-                print(f"   📋 ⚠️ Graph still contains cycles (unexpected for MST)")
+                print(f"   📋 ⚠️ Graph still contains cycles (may be due to bidirectional inter-component edges)")
                 
         except Exception as e:
             print(f"   ❌ MST computation failed: {e}")
@@ -693,13 +807,20 @@ class KnowledgeGraphBuilder:
         minimal_nodes = []
         minimal_edges = []
         
-        if self.minimal_subgraph:
+        if self.minimal_subgraph and self.minimal_subgraph.number_of_nodes() > 0:
+            print(f"🔄 Converting minimal subgraph: {self.minimal_subgraph.number_of_nodes()} nodes, {self.minimal_subgraph.number_of_edges()} edges")
+            
+            # Create a mapping of node IDs for faster lookup
+            node_lookup = {node['id']: node for node in nodes}
+            
             for node_id in self.minimal_subgraph.nodes():
-                # Find the node in the main graph
-                for node in nodes:
-                    if node['id'] == node_id:
-                        minimal_nodes.append(node.copy())
-                        break
+                if node_id in node_lookup:
+                    node_copy = node_lookup[node_id].copy()
+                    # Add minimal subgraph specific properties
+                    node_copy['properties']['in_minimal_subgraph'] = 'true'
+                    minimal_nodes.append(node_copy)
+                else:
+                    print(f"⚠️ Node {node_id} not found in main graph nodes")
             
             for source, target, edge_data in self.minimal_subgraph.edges(data=True):
                 edge = {
@@ -707,9 +828,15 @@ class KnowledgeGraphBuilder:
                     'target_id': target,
                     'label': edge_data.get('label', ''),
                     'weight': edge_data.get('weight', 1.0),
-                    'properties': {}
+                    'properties': {
+                        'connection_type': edge_data.get('connection_type', 'intra_component')
+                    }
                 }
                 minimal_edges.append(edge)
+            
+            print(f"✅ Converted minimal subgraph: {len(minimal_nodes)} nodes, {len(minimal_edges)} edges")
+        else:
+            print("⚠️ No minimal subgraph available for conversion")
         
         # Prepare metadata
         metadata = {
@@ -717,11 +844,15 @@ class KnowledgeGraphBuilder:
             'total_edges': len(edges),
             'minimal_nodes': len(minimal_nodes),
             'minimal_edges': len(minimal_edges),
-            'algorithms': ['pagerank', 'eigenvector', 'betweenness', 'closeness'],
+            'algorithms': ['pagerank', 'eigenvector', 'betweenness', 'closeness', 'hybrid_mst'],
             'last_analysis': datetime.now().isoformat(),
             'has_embeddings': len(self.node_embeddings) > 0,
             'connected_components': nx.number_weakly_connected_components(self.graph),
-            'graph_density': nx.density(self.graph)
+            'minimal_connected_components': nx.number_weakly_connected_components(self.minimal_subgraph) if self.minimal_subgraph else 0,
+            'graph_density': nx.density(self.graph),
+            'minimal_graph_created': self.minimal_subgraph is not None and self.minimal_subgraph.number_of_nodes() > 0,
+            'run_id': self.run_id,
+            'cache_directory': self.cache_dir
         }
         
         return {
