@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct LearningPlanView: View {
-    let project: Project
+    @EnvironmentObject private var projectManager: ProjectManager
     @StateObject private var pythonService = PythonGraphService()
     @State private var learningPlanData: [String: Any]?
     @State private var isGenerating = false
@@ -9,6 +9,10 @@ struct LearningPlanView: View {
     @State private var expandedConcepts: Set<String> = []
     @State private var errorMessage: String?
     @State private var currentProjectId: UUID?
+    
+    private var project: Project? {
+        projectManager.selectedProject
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -47,7 +51,7 @@ struct LearningPlanView: View {
                         }
                     }
                     .buttonStyle(.borderedProminent)
-                    .disabled(project.graphData?.minimalSubgraph == nil)
+                    .disabled(project?.graphData?.minimalSubgraph == nil)
                 }
             }
             .padding()
@@ -115,7 +119,7 @@ struct LearningPlanView: View {
                         .fontWeight(.bold)
                     
                     VStack(spacing: 8) {
-                        if project.graphData?.minimalSubgraph != nil {
+                        if project?.graphData?.minimalSubgraph != nil {
                             Text("Generate a structured learning plan from your knowledge graph")
                                 .font(.body)
                                 .foregroundColor(.secondary)
@@ -141,15 +145,15 @@ struct LearningPlanView: View {
         .onAppear {
             checkProjectChange()
         }
-        .onChange(of: project.id) { _ in
+        .onChange(of: project?.id) { _ in
             checkProjectChange()
         }
     }
     
     private func checkProjectChange() {
         // Reset state if project has changed
-        if currentProjectId != project.id {
-            print("🔄 Project changed from \(currentProjectId?.uuidString ?? "none") to \(project.id.uuidString)")
+        if currentProjectId != project?.id {
+            print("🔄 Learning Plan view project changed from \(currentProjectId?.uuidString ?? "none") to \(project?.id.uuidString ?? "none")")
             
             // Clear all state for the new project
             learningPlanData = nil
@@ -159,10 +163,10 @@ struct LearningPlanView: View {
             isGenerating = false
             
             // Update current project tracking
-            currentProjectId = project.id
+            currentProjectId = project?.id
             
             // Auto-generate if we have a minimal subgraph but no plan data
-            if project.graphData?.minimalSubgraph != nil {
+            if project?.graphData?.minimalSubgraph != nil {
                 Task {
                     await generateLearningPlan()
                 }
@@ -171,6 +175,11 @@ struct LearningPlanView: View {
     }
     
     private func generateLearningPlan() async {
+        guard let project = project else {
+            errorMessage = "No project selected."
+            return
+        }
+        
         guard let minimalSubgraph = project.graphData?.minimalSubgraph else {
             errorMessage = "No minimal subgraph available. Please generate a knowledge graph first."
             return

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct KnowledgeGraphCanvasView: View {
-    let project: Project
+    @EnvironmentObject private var projectManager: ProjectManager
     @State private var minimalGraphData: GraphData = GraphData()
     @State private var selectedNode: GraphNode?
     @State private var zoomScale: CGFloat = 1.0
@@ -15,6 +15,10 @@ struct KnowledgeGraphCanvasView: View {
     @State private var nodeSize: Double = 40.0
     @State private var nodeSpacing: Double = 1.0
     @State private var edgeVisibility: Double = 1.0
+    
+    private var project: Project? {
+        projectManager.selectedProject
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -245,7 +249,7 @@ struct KnowledgeGraphCanvasView: View {
         .onAppear {
             checkProjectChange()
         }
-        .onChange(of: project.id) { _ in
+        .onChange(of: project?.id) { _ in
             checkProjectChange()
         }
         .onChange(of: nodeSpacing) { _ in
@@ -333,8 +337,8 @@ struct KnowledgeGraphCanvasView: View {
     
     private func checkProjectChange() {
         // Reset state if project has changed
-        if currentProjectId != project.id {
-            print("🔄 Graph view project changed from \(currentProjectId?.uuidString ?? "none") to \(project.id.uuidString)")
+        if currentProjectId != project?.id {
+            print("🔄 Graph view project changed from \(currentProjectId?.uuidString ?? "none") to \(project?.id.uuidString ?? "none")")
             
             // Clear all state for the new project
             selectedNode = nil
@@ -347,7 +351,7 @@ struct KnowledgeGraphCanvasView: View {
             loadProjectGraphData()
             
             // Update current project tracking
-            currentProjectId = project.id
+            currentProjectId = project?.id
             
             // Initialize positions and center view
             initializeNodePositions()
@@ -358,6 +362,13 @@ struct KnowledgeGraphCanvasView: View {
     private func loadProjectGraphData() {
         // Initialize with minimal subgraph or fallback to full graph
         var graphData = GraphData()
+        
+        guard let project = project else {
+            print("📊 No project selected")
+            minimalGraphData = graphData
+            return
+        }
+        
         if let minimalSubgraph = project.graphData?.minimalSubgraph {
             graphData.nodes = minimalSubgraph.nodes
             graphData.edges = minimalSubgraph.edges

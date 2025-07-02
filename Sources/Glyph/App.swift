@@ -1819,7 +1819,7 @@ struct ProjectDetailView: View {
             // Tab View as specified in PRD
             TabView(selection: $selectedTab) {
                 // Learning Plan Tab
-                LearningPlanView(project: project)
+                LearningPlanView()
                     .tabItem {
                         Image(systemName: "doc.text")
                         Text("Learning Plan")
@@ -1827,7 +1827,7 @@ struct ProjectDetailView: View {
                     .tag(0)
                 
                 // Knowledge Graph Tab  
-                KnowledgeGraphCanvasView(project: project)
+                KnowledgeGraphCanvasView()
                     .tabItem {
                         Image(systemName: "network")
                         Text("Knowledge Graph")
@@ -1835,7 +1835,7 @@ struct ProjectDetailView: View {
                     .tag(1)
                 
                 // Chat Assistant Tab
-                ChatView(project: project)
+                ChatView()
                     .tabItem {
                         Image(systemName: "message")
                         Text("Chat")

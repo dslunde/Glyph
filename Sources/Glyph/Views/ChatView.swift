@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct ChatView: View {
-    let project: Project
+    @EnvironmentObject private var projectManager: ProjectManager
     @StateObject private var pythonService = PythonGraphService()
     @StateObject private var llmService = LLMService()
     @State private var messages: [ChatMessage] = []
@@ -9,6 +9,10 @@ struct ChatView: View {
     @State private var isProcessing = false
     @State private var showingSettings = false
     @State private var currentProjectId: UUID?
+    
+    private var project: Project? {
+        projectManager.selectedProject
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -19,7 +23,7 @@ struct ChatView: View {
                         .font(.title2)
                         .fontWeight(.bold)
                     
-                    Text("Ask questions about your \(project.topic.isEmpty ? project.name : project.topic) knowledge graph")
+                    Text("Ask questions about your \(project?.topic.isEmpty == false ? project!.topic : (project?.name ?? "knowledge graph")) knowledge graph")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
@@ -111,12 +115,20 @@ struct ChatView: View {
         .onAppear {
             checkProjectChange()
         }
-        .onChange(of: project.id) { _ in
+        .onChange(of: project?.id) { _ in
             checkProjectChange()
         }
     }
     
     private func welcomeMessage() -> String {
+        guard let project = project else {
+            return """
+            Hello! I'm your knowledge graph assistant.
+            
+            Please select a project to begin exploring your knowledge graph.
+            """
+        }
+        
         let topic = project.topic.isEmpty ? project.name : project.topic
         let nodeCount = project.graphData?.nodes.count ?? 0
         
@@ -136,8 +148,8 @@ struct ChatView: View {
     
     private func checkProjectChange() {
         // Reset state if project has changed
-        if currentProjectId != project.id {
-            print("🔄 Chat view project changed from \(currentProjectId?.uuidString ?? "none") to \(project.id.uuidString)")
+        if currentProjectId != project?.id {
+            print("🔄 Chat view project changed from \(currentProjectId?.uuidString ?? "none") to \(project?.id.uuidString ?? "none")")
             
             // Clear all chat state for the new project
             messages.removeAll()
@@ -145,7 +157,7 @@ struct ChatView: View {
             isProcessing = false
             
             // Update current project tracking
-            currentProjectId = project.id
+            currentProjectId = project?.id
         }
     }
     
@@ -190,6 +202,10 @@ struct ChatView: View {
     }
     
     private func processUserQuery(_ query: String) async throws -> String {
+        guard let project = project else {
+            return "No project is currently selected. Please select a project to continue."
+        }
+        
         // Build context from knowledge graph and sources
         let context = buildKnowledgeGraphContext()
         
@@ -203,6 +219,10 @@ struct ChatView: View {
     
     private func buildKnowledgeGraphContext() -> KnowledgeGraphContext {
         var context = KnowledgeGraphContext()
+        
+        guard let project = project else {
+            return context
+        }
         
         // Add topic information
         context.topic = project.topic.isEmpty ? project.name : project.topic
