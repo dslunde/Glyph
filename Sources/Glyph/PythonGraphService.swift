@@ -269,8 +269,23 @@ class PythonGraphService: ObservableObject {
         print("🏗️ Starting knowledge graph generation...")
         
         do {
-            // APP_BUNDLE_MODE already set in ensurePythonConfigured()
-            print("🧠 Using previously configured APP_BUNDLE_MODE")
+            // Ensure APP_BUNDLE_MODE is set for this Python subprocess
+            if Bundle.main.bundlePath.contains(".app") {
+                setenv("APP_BUNDLE_MODE", "1", 1)
+                print("🎯 Confirmed APP_BUNDLE_MODE=1 for knowledge graph generation")
+            } else {
+                unsetenv("APP_BUNDLE_MODE")
+                print("🔧 Development mode - APP_BUNDLE_MODE unset for knowledge graph generation")
+            }
+            
+            // Start status polling BEFORE Python execution
+            print("🔄 Starting Python status polling...")
+            let statusPollingTask = Task {
+                await pollPythonStatusUpdates(progressCallback: progressCallback)
+            }
+            
+            // Give polling task a moment to start
+            try await Task.sleep(nanoseconds: 100_000_000) // 100ms
             
             // Import our custom knowledge graph module
             let kgModule = try Python.attemptImport("knowledge_graph_generation")
@@ -318,13 +333,12 @@ class PythonGraphService: ObservableObject {
             
             timeoutTask.cancel() // Cancel timeout if we completed successfully
             
-            // Poll for status updates from Python
-            let statusPollingTask = Task {
-                await pollPythonStatusUpdates(progressCallback: progressCallback)
-            }
+            // Stop status polling after Python completes
+            print("🛑 Stopping Python status polling...")
+            statusPollingTask.cancel()
             
-            // Cancel status polling when main task completes
-            defer { statusPollingTask.cancel() }
+            // Give polling task a moment to finish and report final status
+            try await Task.sleep(nanoseconds: 300_000_000) // 300ms
             
             // Extract results from Python dict
             let success = Bool(result["success"]) ?? false
@@ -798,18 +812,30 @@ class PythonGraphService: ObservableObject {
             // App bundle mode
             let homeDir = FileManager.default.homeDirectoryForCurrentUser.path
             cacheDir = "\(homeDir)/Library/Caches/com.glyph.knowledge-graph-explorer"
+            print("📁 Swift polling: App bundle cache directory: \(cacheDir)")
         } else {
             // Development mode
             cacheDir = "./graph_cache"
+            print("📁 Swift polling: Development cache directory: \(cacheDir)")
         }
         
         let statusFile = "\(cacheDir)/kg_status.json"
+        print("📊 Swift polling: Looking for status file at: \(statusFile)")
         var lastProgress: Double = 0.0
+        var pollCount = 0
         
-        while !Task.isCancelled {
+        var shouldContinue = true
+        
+        while shouldContinue && !Task.isCancelled {
             do {
+                pollCount += 1
+                
                 // Check if status file exists and read it
                 if FileManager.default.fileExists(atPath: statusFile) {
+                    if pollCount == 1 {
+                        print("✅ Status file found on poll #\(pollCount)")
+                    }
+                    
                     let statusData = try Data(contentsOf: URL(fileURLWithPath: statusFile))
                     if let statusDict = try JSONSerialization.jsonObject(with: statusData) as? [String: Any] {
                         let progress = statusDict["progress"] as? Double ?? 0.0
@@ -820,20 +846,32 @@ class PythonGraphService: ObservableObject {
                         // Only update if progress has changed
                         if progress != lastProgress || completed {
                             lastProgress = progress
+                            print("📈 Progress update: \(Int(progress * 100))% - \(message)")
+                            
                             DispatchQueue.main.async {
                                 progressCallback(progress, message)
                             }
                             
                             if let error = error {
                                 print("❌ Python status error: \(error)")
-                                break
+                                shouldContinue = false
                             }
                             
                             if completed {
-                                print("✅ Python process completed successfully")
-                                break
+                                print("✅ Python process completed successfully via status file")
+                                shouldContinue = false
                             }
                         }
+                    } else {
+                        if pollCount <= 3 {
+                            print("⚠️ Could not parse status file JSON on poll #\(pollCount)")
+                        }
+                    }
+                } else {
+                    if pollCount == 1 {
+                        print("⏳ Status file not found yet, starting polling...")
+                    } else if pollCount % 25 == 0 {  // Every 5 seconds
+                        print("⏳ Still waiting for status file... (poll #\(pollCount))")
                     }
                 }
                 
@@ -841,10 +879,34 @@ class PythonGraphService: ObservableObject {
                 try await Task.sleep(nanoseconds: 200_000_000)
                 
             } catch {
-                // Ignore file reading errors (file might not exist yet)
+                if pollCount <= 3 {
+                    print("⚠️ Status file reading error on poll #\(pollCount): \(error)")
+                }
                 try? await Task.sleep(nanoseconds: 200_000_000)
             }
         }
+        
+        // Handle case where task was cancelled - try to read final status once more
+        if Task.isCancelled && FileManager.default.fileExists(atPath: statusFile) {
+            do {
+                print("🔄 Task cancelled - checking for final status update...")
+                let statusData = try Data(contentsOf: URL(fileURLWithPath: statusFile))
+                if let statusDict = try JSONSerialization.jsonObject(with: statusData) as? [String: Any] {
+                    let progress = statusDict["progress"] as? Double ?? 0.0
+                    let message = statusDict["message"] as? String ?? ""
+                    let completed = statusDict["completed"] as? Bool ?? false
+                    
+                    print("📈 Final progress update: \(Int(progress * 100))% - \(message)")
+                    DispatchQueue.main.async {
+                        progressCallback(progress, message)
+                    }
+                }
+            } catch {
+                print("⚠️ Could not read final status: \(error)")
+            }
+        }
+        
+        print("🛑 Status polling stopped after \(pollCount) polls")
     }
     
     // MARK: - Helper Functions for Python/Swift Conversion

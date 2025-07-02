@@ -105,12 +105,16 @@ class KnowledgeGraphBuilder:
     def __init__(self, cache_dir: Optional[str] = None):
         """Initialize the knowledge graph builder."""
         if cache_dir is None:
+            # Debug environment variable detection
+            app_bundle_mode = os.getenv('APP_BUNDLE_MODE')
+            print(f"🔍 Environment check: APP_BUNDLE_MODE = {app_bundle_mode}")
+            
             # Use appropriate cache directory for macOS app bundles
-            if os.getenv('APP_BUNDLE_MODE'):
+            if app_bundle_mode == '1':
                 # Running in app bundle - use user cache directory
                 home_dir = os.path.expanduser("~")
                 self.cache_dir = os.path.join(home_dir, "Library", "Caches", "com.glyph.knowledge-graph-explorer")
-                print(f"📁 App bundle mode - using cache directory: {self.cache_dir}")
+                print(f"📁 App bundle mode detected - using cache directory: {self.cache_dir}")
             else:
                 # Development mode - use local cache
                 self.cache_dir = "./graph_cache"
@@ -230,10 +234,16 @@ class KnowledgeGraphBuilder:
             
             with open(self.status_file, 'w') as f:
                 json.dump(status, f)
+            
+            # Debug: Confirm file was written
+            if progress in [0.0, 0.3, 0.7, 1.0]:  # Log key milestones
+                print(f"📝 Status written to {self.status_file}: {progress:.1%} - {message}")
                 
         except Exception as e:
             # Don't let status writing break the main process
-            print(f"⚠️ Failed to write status checkpoint: {e}")
+            print(f"⚠️ Failed to write status checkpoint to {self.status_file}: {e}")
+            print(f"   Cache dir exists: {os.path.exists(self.cache_dir)}")
+            print(f"   Cache dir writable: {os.access(self.cache_dir, os.W_OK) if os.path.exists(self.cache_dir) else 'N/A'}")
     
     def _clear_status_file(self):
         """Clear status file at start of process."""
