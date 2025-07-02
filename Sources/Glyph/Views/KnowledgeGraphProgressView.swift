@@ -204,7 +204,7 @@ struct KnowledgeGraphProgressView: View {
         
         // Convert nodes
         if let nodes = result["nodes"] as? [[String: Any]] {
-            graphData.nodes = nodes.compactMap { nodeDict in
+            graphData.nodes = nodes.compactMap { nodeDict -> GraphNode? in
                 guard let id = nodeDict["id"] as? String,
                       let label = nodeDict["label"] as? String,
                       let typeString = nodeDict["type"] as? String,
@@ -215,13 +215,19 @@ struct KnowledgeGraphProgressView: View {
                 let properties = nodeDict["properties"] as? [String: String] ?? [:]
                 let position = nodeDict["position"] as? [String: Double] ?? ["x": 0.0, "y": 0.0]
                 
-                return GraphNode(
-                    id: UUID(uuidString: id) ?? UUID(),
+                var node = GraphNode(
                     label: label,
                     type: nodeType,
                     properties: properties,
                     position: CGPoint(x: position["x"] ?? 0.0, y: position["y"] ?? 0.0)
                 )
+                
+                // Set the ID from the stored value if possible
+                if let uuid = UUID(uuidString: id) {
+                    node.id = uuid
+                }
+                
+                return node
             }
         }
         
@@ -252,7 +258,7 @@ struct KnowledgeGraphProgressView: View {
             var minimalSubgraph = MinimalSubgraph()
             
             if let minimalNodes = minimalSubgraphDict["nodes"] as? [[String: Any]] {
-                minimalSubgraph.nodes = minimalNodes.compactMap { nodeDict in
+                minimalSubgraph.nodes = minimalNodes.compactMap { nodeDict -> GraphNode? in
                     guard let id = nodeDict["id"] as? String,
                           let label = nodeDict["label"] as? String,
                           let typeString = nodeDict["type"] as? String,
@@ -263,13 +269,19 @@ struct KnowledgeGraphProgressView: View {
                     let properties = nodeDict["properties"] as? [String: String] ?? [:]
                     let position = nodeDict["position"] as? [String: Double] ?? ["x": 0.0, "y": 0.0]
                     
-                    return GraphNode(
-                        id: UUID(uuidString: id) ?? UUID(),
+                    var node = GraphNode(
                         label: label,
                         type: nodeType,
                         properties: properties,
                         position: CGPoint(x: position["x"] ?? 0.0, y: position["y"] ?? 0.0)
                     )
+                    
+                    // Set the ID from the stored value if possible
+                    if let uuid = UUID(uuidString: id) {
+                        node.id = uuid
+                    }
+                    
+                    return node
                 }
             }
             

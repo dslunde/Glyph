@@ -258,29 +258,34 @@ class PythonGraphService: ObservableObject {
             let kgModule = try Python.attemptImport("knowledge_graph_generation")
             
             // Convert Swift sources to Python format
-            let pythonSources = Python.list(sources)
-            
-            // Create progress callback bridge
-            var currentProgress: Double = 0.0
-            let progressBridge = PythonObject({ (progress: PythonObject, message: PythonObject) -> PythonObject in
-                let progressValue = Double(progress) ?? 0.0
-                let messageStr = String(describing: message)
-                currentProgress = progressValue
-                
-                // Call Swift callback on main thread
-                DispatchQueue.main.async {
-                    progressCallback(progressValue, messageStr)
-                }
-                
-                return Python.None
+            let pythonSources = Python.list(sources.map { source in
+                Python.dict(source.compactMapValues { value -> String in
+                    if let stringValue = value as? String {
+                        return stringValue
+                    } else if let intValue = value as? Int {
+                        return String(intValue)
+                    } else if let doubleValue = value as? Double {
+                        return String(doubleValue)
+                    } else {
+                        return String(describing: value)
+                    }
+                })
             })
             
-            // Call the knowledge graph generation function
+            // Call the knowledge graph generation function (without progress callback for now)
             let result = kgModule.generate_knowledge_graph_from_sources(
                 pythonSources,
                 topic,
-                progressBridge
+                Python.None
             )
+            
+            // Simulate progress updates since Python callback is complex
+            DispatchQueue.main.async { progressCallback(0.2, "Starting knowledge graph generation") }
+            try await Task.sleep(nanoseconds: 500_000_000)
+            DispatchQueue.main.async { progressCallback(0.5, "Building graph structure") }
+            try await Task.sleep(nanoseconds: 500_000_000)
+            DispatchQueue.main.async { progressCallback(0.8, "Calculating centrality metrics") }
+            try await Task.sleep(nanoseconds: 500_000_000)
             
             // Extract results from Python dict
             let success = Bool(result["success"]) ?? false

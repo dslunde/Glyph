@@ -116,6 +116,7 @@ echo "📦 Installing custom Python modules..."
 CUSTOM_PYTHON_FILES=(
     "Sources/Glyph/PythonAPIService.py"
     "Sources/Glyph/source_collection_workflow.py"
+    "Sources/Glyph/knowledge_graph_generation.py"
 )
 
 for file in "${CUSTOM_PYTHON_FILES[@]}"; do
