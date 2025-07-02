@@ -942,10 +942,49 @@ class PythonGraphService: ObservableObject {
     // MARK: - Helper Functions for Python/Swift Conversion
     
     private func convertPythonToSwift(_ value: PythonObject) -> Any {
-        // Convert Python objects to appropriate Swift types
+        // Handle None
+        if value == Python.None {
+            return NSNull()
+        }
+        
+        // Try to detect the type and convert appropriately
         let stringValue = String(describing: value)
         
-        // Try to parse as different types
+        // Check if it's a Python list
+        if stringValue.hasPrefix("[") && stringValue.hasSuffix("]") {
+            do {
+                // Try to iterate as a Python list
+                let listArray = Array(value)
+                var swiftArray: [Any] = []
+                for item in listArray {
+                    swiftArray.append(convertPythonToSwift(item))
+                }
+                return swiftArray
+            } catch {
+                // If iteration fails, treat as string
+                return stringValue
+            }
+        }
+        
+        // Check if it's a Python dictionary
+        if stringValue.hasPrefix("{") && stringValue.hasSuffix("}") {
+            do {
+                // Try to iterate as a Python dict
+                let keys = Array(value.keys())
+                var swiftDict: [String: Any] = [:]
+                for key in keys {
+                    let keyString = String(describing: key)
+                    let dictValue = value[key]
+                    swiftDict[keyString] = convertPythonToSwift(dictValue)
+                }
+                return swiftDict
+            } catch {
+                // If iteration fails, treat as string
+                return stringValue
+            }
+        }
+        
+        // Handle basic types
         if let int = Int(stringValue) {
             return int
         } else if let double = Double(stringValue) {
