@@ -7,6 +7,7 @@ struct KnowledgeGraphCanvasView: View {
     @State private var selectedNode: GraphNode?
     @State private var zoomScale: CGFloat = 1.0
     @State private var panOffset: CGSize = .zero
+    @State private var initialPanOffset: CGSize = .zero  // Store initial pan state for gesture
     @State private var draggedNode: GraphNode?
     @State private var showingNodeDetails = false
     @State private var showingControls = true
@@ -14,7 +15,7 @@ struct KnowledgeGraphCanvasView: View {
     
     // User controls
     @State private var nodeSize: Double = 40.0
-    @State private var nodeSpacing: Double = 1.0
+    @State private var nodeSpacing: Double = 1.5  // Default to more spread out
     @State private var edgeVisibility: Double = 1.0
     
     private var project: Project? {
@@ -94,8 +95,16 @@ struct KnowledgeGraphCanvasView: View {
                                 DragGesture()
                                     .onChanged { value in
                                         if draggedNode == nil {
-                                            panOffset = value.translation
+                                            // Add drag translation to initial pan offset
+                                            panOffset = CGSize(
+                                                width: initialPanOffset.width + value.translation.width,
+                                                height: initialPanOffset.height + value.translation.height
+                                            )
                                         }
+                                    }
+                                    .onEnded { _ in
+                                        // Update initial offset for next gesture
+                                        initialPanOffset = panOffset
                                     },
                                 
                                 // Zoom gesture
@@ -179,7 +188,7 @@ struct KnowledgeGraphCanvasView: View {
                                     ControlSlider(
                                         title: "Node Size",
                                         value: $nodeSize,
-                                        range: 20...80,
+                                        range: 10...80,  // Allow smaller nodes down to 10px
                                         step: 5,
                                         formatter: { "\(Int($0))px" }
                                     )
@@ -187,7 +196,7 @@ struct KnowledgeGraphCanvasView: View {
                                     ControlSlider(
                                         title: "Node Spacing",
                                         value: $nodeSpacing,
-                                        range: 0.5...3.0,
+                                        range: 0.5...5.0,
                                         step: 0.1,
                                         formatter: { String(format: "%.1fx", $0) }
                                     )
@@ -283,9 +292,9 @@ struct KnowledgeGraphCanvasView: View {
                 path.addLine(to: targetPos)
             }
             
-            // Make edges more visible: stronger color and better line width
-            let edgeColor = Color.gray.opacity(edgeVisibility * 0.8)  // Changed from secondary to gray with higher opacity
-            let lineWidth = max(1.0, 1.5 + (edge.weight * 1.0))  // Increased minimum width and scaling
+            // Make edges more visible: WHITE for dark mode testing
+            let edgeColor = Color.white.opacity(edgeVisibility * 0.9)  // WHITE for dark mode testing
+            let lineWidth = max(1.5, 2.0 + (edge.weight * 1.0))  // Increased minimum width and scaling
             
             // Debug first few edges
             if index < 3 {
@@ -381,6 +390,7 @@ struct KnowledgeGraphCanvasView: View {
             showingNodeDetails = false
             zoomScale = 1.0
             panOffset = .zero
+            initialPanOffset = .zero  // Reset initial pan state
             originalNodePositions.removeAll()  // Clear original positions for new project
             
             // Load graph data for the new project
@@ -442,6 +452,7 @@ struct KnowledgeGraphCanvasView: View {
         print("🎯 centerGraph() called with \(minimalGraphData.nodes.count) nodes")
         zoomScale = 1.0
         panOffset = .zero
+        initialPanOffset = .zero  // Reset initial pan state
         
         if !minimalGraphData.nodes.isEmpty {
             // Scale positions to fit a reasonable viewport (400x300)
