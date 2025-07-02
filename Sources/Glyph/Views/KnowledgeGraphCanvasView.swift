@@ -72,18 +72,20 @@ struct KnowledgeGraphCanvasView: View {
                         
                         // Graph Canvas
                         Canvas { context, size in
-                            context.clipToLayer(opacity: 1) { context in
-                                // Apply transformations: translate to center, then apply pan and zoom
-                                context.translateBy(x: size.width / 2, y: size.height / 2)
-                                context.translateBy(x: panOffset.width, y: panOffset.height)
-                                context.scaleBy(x: zoomScale, y: zoomScale)
-                                
-                                // Draw edges first
-                                drawEdges(context: context)
-                                
-                                // Draw nodes
-                                drawNodes(context: context)
-                            }
+                            print("🖼️ Canvas rendering: size=\(size), nodes=\(minimalGraphData.nodes.count), panOffset=\(panOffset), zoomScale=\(zoomScale)")
+                            
+                            // Apply transformations: translate to center, then apply pan and zoom
+                            context.translateBy(x: size.width / 2, y: size.height / 2)
+                            context.translateBy(x: panOffset.width, y: panOffset.height)
+                            context.scaleBy(x: zoomScale, y: zoomScale)
+                            
+                            print("🔧 Canvas transformations applied: center=(\(size.width/2), \(size.height/2)), pan=\(panOffset), zoom=\(zoomScale)")
+                            
+                            // Draw edges first
+                            drawEdges(context: context)
+                            
+                            // Draw nodes
+                            drawNodes(context: context)
                         }
                         .gesture(
                             SimultaneousGesture(
@@ -286,7 +288,19 @@ struct KnowledgeGraphCanvasView: View {
     }
     
     private func drawNodes(context: GraphicsContext) {
-        for node in minimalGraphData.nodes {
+        print("🎨 Drawing \(minimalGraphData.nodes.count) nodes")
+        
+        guard !minimalGraphData.nodes.isEmpty else {
+            print("❌ No nodes to draw")
+            return
+        }
+        
+        let firstFewNodes = minimalGraphData.nodes.prefix(3)
+        for (index, node) in firstFewNodes.enumerated() {
+            print("🎯 Node \(index): '\(node.label)' at (\(node.position.x), \(node.position.y)) type: \(node.type)")
+        }
+        
+        for (index, node) in minimalGraphData.nodes.enumerated() {
             let isSelected = selectedNode?.id == node.id
             let isDragged = draggedNode?.id == node.id
             
@@ -300,6 +314,11 @@ struct KnowledgeGraphCanvasView: View {
                 width: currentNodeSize,
                 height: currentNodeSize
             )
+            
+            // Debug first few nodes
+            if index < 3 {
+                print("🎨 Drawing node \(index): rect=\(nodeRect), size=\(currentNodeSize)")
+            }
             
             // Node color based on type
             let nodeColor = node.type.color.opacity(isSelected ? 0.9 : 0.8)
@@ -332,7 +351,11 @@ struct KnowledgeGraphCanvasView: View {
             
             context.draw(labelText, in: labelRect)
         }
+        
+        print("✅ Finished drawing \(minimalGraphData.nodes.count) nodes")
     }
+    
+
     
     // MARK: - Project Management
     
@@ -404,22 +427,68 @@ struct KnowledgeGraphCanvasView: View {
     }
     
     private func centerGraph() {
+        print("🎯 centerGraph() called with \(minimalGraphData.nodes.count) nodes")
         zoomScale = 1.0
+        panOffset = .zero
         
         if !minimalGraphData.nodes.isEmpty {
-            let positions = minimalGraphData.nodes.map { $0.position }
-            let minX = positions.map { $0.x }.min() ?? 0
-            let maxX = positions.map { $0.x }.max() ?? 0
-            let minY = positions.map { $0.y }.min() ?? 0
-            let maxY = positions.map { $0.y }.max() ?? 0
-            
-            let centerX = (minX + maxX) / 2
-            let centerY = (minY + maxY) / 2
-            
-            // Since Canvas now centers automatically, we just need to offset by the graph center
-            panOffset = CGSize(width: -centerX, height: -centerY)
+            // Scale positions to fit a reasonable viewport (400x300)
+            scaleNodesToFitViewport()
         } else {
-            panOffset = .zero
+            print("🎯 No nodes, panOffset set to zero")
+        }
+    }
+    
+    private func scaleNodesToFitViewport() {
+        let positions = minimalGraphData.nodes.map { $0.position }
+        let minX = positions.map { $0.x }.min() ?? 0
+        let maxX = positions.map { $0.x }.max() ?? 0
+        let minY = positions.map { $0.y }.min() ?? 0
+        let maxY = positions.map { $0.y }.max() ?? 0
+        
+        print("🎯 Original graph bounds: x=[\(minX), \(maxX)], y=[\(minY), \(maxY)]")
+        
+        let graphWidth = maxX - minX
+        let graphHeight = maxY - minY
+        
+        // Target viewport size (smaller than canvas to leave margin)
+        let targetWidth: CGFloat = 400
+        let targetHeight: CGFloat = 300
+        
+        // Calculate scale factor to fit in target viewport
+        let scaleX = graphWidth > 0 ? targetWidth / graphWidth : 1.0
+        let scaleY = graphHeight > 0 ? targetHeight / graphHeight : 1.0
+        let scale = min(scaleX, scaleY, 1.0) // Don't scale up, only down
+        
+        print("🎯 Scaling factor: \(scale) (target: \(targetWidth)x\(targetHeight))")
+        
+        // Scale and center all nodes
+        let graphCenterX = (minX + maxX) / 2
+        let graphCenterY = (minY + maxY) / 2
+        
+        for index in minimalGraphData.nodes.indices {
+            let node = minimalGraphData.nodes[index]
+            
+            // Translate to origin, scale, then center around zero
+            let scaledX = (node.position.x - graphCenterX) * scale
+            let scaledY = (node.position.y - graphCenterY) * scale
+            
+            minimalGraphData.nodes[index].position = CGPoint(x: scaledX, y: scaledY)
+        }
+        
+        // Debug: Show new bounds
+        let newPositions = minimalGraphData.nodes.map { $0.position }
+        let newMinX = newPositions.map { $0.x }.min() ?? 0
+        let newMaxX = newPositions.map { $0.x }.max() ?? 0
+        let newMinY = newPositions.map { $0.y }.min() ?? 0
+        let newMaxY = newPositions.map { $0.y }.max() ?? 0
+        
+        print("🎯 Scaled graph bounds: x=[\(newMinX), \(newMaxX)], y=[\(newMinY), \(newMaxY)]")
+        
+        // Show first few scaled positions
+        let firstThreeNodes = minimalGraphData.nodes.prefix(3)
+        for (index, node) in firstThreeNodes.enumerated() {
+            print("🎯 Scaled Node \(index): '\(node.label)' at (\(node.position.x), \(node.position.y))")
         }
     }
     
@@ -456,24 +525,42 @@ struct KnowledgeGraphCanvasView: View {
     }
     
     private func initializeNodePositions() {
+        print("🔍 initializeNodePositions called with \(minimalGraphData.nodes.count) nodes")
+        
         // Check if nodes need position initialization
         let nodesNeedPositioning = minimalGraphData.nodes.allSatisfy { node in
             node.position.x == 0 && node.position.y == 0
         }
         
-        guard nodesNeedPositioning && !minimalGraphData.nodes.isEmpty else { return }
+        print("🔍 Nodes need positioning: \(nodesNeedPositioning)")
+        
+        guard nodesNeedPositioning && !minimalGraphData.nodes.isEmpty else { 
+            print("🔍 Skipping position initialization: nodesNeedPositioning=\(nodesNeedPositioning), isEmpty=\(minimalGraphData.nodes.isEmpty)")
+            return 
+        }
         
         print("🎯 Initializing node positions for \(minimalGraphData.nodes.count) nodes")
         
         // Generate positions using a force-directed layout
         generateForceDirectedLayout()
         
+        // Debug: Check positions after generation
+        let firstThreeNodes = minimalGraphData.nodes.prefix(3)
+        for (index, node) in firstThreeNodes.enumerated() {
+            print("🎯 After positioning - Node \(index): '\(node.label)' at (\(node.position.x), \(node.position.y))")
+        }
+        
         print("✅ Node positions initialized")
     }
     
     private func generateForceDirectedLayout() {
         let nodeCount = minimalGraphData.nodes.count
-        guard nodeCount > 0 else { return }
+        guard nodeCount > 0 else { 
+            print("❌ generateForceDirectedLayout: No nodes to position")
+            return 
+        }
+        
+        print("🎯 generateForceDirectedLayout: Positioning \(nodeCount) nodes")
         
         // Canvas dimensions for positioning
         let canvasWidth: CGFloat = 800
@@ -481,11 +568,16 @@ struct KnowledgeGraphCanvasView: View {
         let centerX = canvasWidth / 2
         let centerY = canvasHeight / 2
         
+        print("🎯 Canvas dimensions: \(canvasWidth) x \(canvasHeight), center: (\(centerX), \(centerY))")
+        
         // For small graphs, use a simple circular layout
         if nodeCount <= 20 {
+            print("🎯 Using circular layout for \(nodeCount) nodes")
             generateCircularLayout(centerX: centerX, centerY: centerY, radius: min(canvasWidth, canvasHeight) * 0.3)
             return
         }
+        
+        print("🎯 Using force-directed layout for \(nodeCount) nodes")
         
         // For larger graphs, use a force-directed approach
         let iterations = 50
@@ -573,6 +665,8 @@ struct KnowledgeGraphCanvasView: View {
     }
     
     private func generateCircularLayout(centerX: CGFloat, centerY: CGFloat, radius: CGFloat) {
+        print("🔄 generateCircularLayout: center=(\(centerX), \(centerY)), radius=\(radius), nodes=\(minimalGraphData.nodes.count)")
+        
         let nodeCount = minimalGraphData.nodes.count
         
         for (index, _) in minimalGraphData.nodes.enumerated() {
@@ -581,7 +675,14 @@ struct KnowledgeGraphCanvasView: View {
             let y = centerY + radius * CGFloat(sin(angle))
             
             minimalGraphData.nodes[index].position = CGPoint(x: x, y: y)
+            
+            // Debug first few positions
+            if index < 3 {
+                print("🔄 Circular position \(index): node at (\(x), \(y)) angle=\(angle)")
+            }
         }
+        
+        print("✅ Circular layout complete")
     }
 }
 
