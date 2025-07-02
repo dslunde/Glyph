@@ -60,10 +60,7 @@ class PythonGraphService: ObservableObject {
             
             print("✅ Found embedded Python files")
             
-            // CRITICAL: Configure PythonKit to use embedded Python BEFORE any Python calls
-            PythonLibrary.useLibrary(at: pythonLibraryPath)
-            
-            // Set environment variables
+            // Set environment variables FIRST
             setenv("PYTHONHOME", pythonPath, 1)
             setenv("PYTHONEXECUTABLE", pythonExecutable, 1)
             
@@ -72,7 +69,15 @@ class PythonGraphService: ObservableObject {
             let combinedPath = "\(pythonLibPath):\(sitePackages)"
             setenv("PYTHONPATH", combinedPath, 1)
             
-            print("🔧 Embedded Python configured successfully")
+            print("🔧 Environment variables set")
+            
+            // CRITICAL: Configure PythonKit to use embedded Python BEFORE any Python calls
+            // This call can potentially hang, so we'll handle it carefully
+            print("🐍 Attempting to configure PythonKit library...")
+            PythonLibrary.useLibrary(at: pythonLibraryPath)
+            print("✅ PythonKit library configured successfully")
+            
+            print("🔧 Embedded Python configuration completed")
         } else {
             print("⚠️ Embedded Python not found - using system Python")
             print("   Missing: \(pythonExecutable) or \(pythonLibraryPath)")

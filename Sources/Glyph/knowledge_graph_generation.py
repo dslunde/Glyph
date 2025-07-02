@@ -20,7 +20,7 @@ import pickle
 import gzip
 import hashlib
 import tempfile
-from typing import List, Dict, Any, Optional, Tuple, Set
+from typing import List, Dict, Any, Optional, Tuple, Set, Callable
 from datetime import datetime
 from collections import defaultdict, Counter
 import re
@@ -556,7 +556,7 @@ class KnowledgeGraphBuilder:
                 node_degrees = []
                 for node in remaining_nodes:
                     try:
-                        degree = int(self.graph.degree(node))
+                        degree = self.graph.degree(node)
                         node_degrees.append((node, degree))
                     except:
                         node_degrees.append((node, 0))
@@ -707,7 +707,7 @@ class KnowledgeGraphBuilder:
 def generate_knowledge_graph_from_sources(
     sources: List[Dict[str, Any]], 
     topic: str = "",
-    progress_callback: Optional[callable] = None
+    progress_callback: Optional[Callable] = None
 ) -> Dict[str, Any]:
     """Main function for generating knowledge graph from sources."""
     if not sources:

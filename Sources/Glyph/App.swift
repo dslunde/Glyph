@@ -4,9 +4,18 @@ import AppKit
 @main
 struct GlyphApp: App {
     init() {
-        // Initialize Python configuration and environment services
-        PythonGraphService.ensurePythonConfigured()
         print("🚀 Glyph starting with API configuration")
+        
+        // Configure Python asynchronously to avoid blocking app startup
+        Task {
+            await Self.configurePythonAsync()
+        }
+    }
+    
+    private static func configurePythonAsync() async {
+        print("🐍 Starting asynchronous Python configuration...")
+        PythonGraphService.ensurePythonConfigured()
+        print("✅ Python configuration completed")
     }
     
     var body: some Scene {
