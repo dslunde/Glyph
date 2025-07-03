@@ -806,7 +806,11 @@ class PythonGraphService: ObservableObject {
         } else if let boolValue = value as? Bool {
             return Python.bool(boolValue)
         } else if let arrayValue = value as? [Any] {
-            return Python.list(arrayValue.map { convertSwiftToPython($0) })
+            let pythonList = Python.list()
+            for item in arrayValue {
+                pythonList.append(convertSwiftToPython(item))
+            }
+            return pythonList
         } else if let dictValue = value as? [String: Any] {
             let pythonDict = Python.dict()
             for (key, val) in dictValue {
@@ -1295,6 +1299,10 @@ class PythonGraphService: ObservableObject {
             var swiftArray: [Any] = []
             for item in listArray {
                 swiftArray.append(convertPythonToSwift(item))
+            }
+            // If all elements are String, return as [String] for easier casting
+            if swiftArray.allSatisfy({ $0 is String }) {
+                return swiftArray as! [String]
             }
             return swiftArray
         }

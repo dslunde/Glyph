@@ -1107,6 +1107,9 @@ def map_nodes_to_meaningful_concepts(
             except Exception:
                 node_source_references = []
         
+        # Clean node source references (remove empty or 'None')
+        node_source_references = [ref for ref in node_source_references if ref and ref.lower() != 'none']
+
         # Find best matching concept from sources
         best_match = None
         best_score = 0.0
@@ -1414,10 +1417,11 @@ def generate_learning_plan_from_minimal_subgraph(
             if enhanced_concept.get('node_source_references'):
                 combined_source_references.extend(enhanced_concept['node_source_references'])
             
-            # Remove duplicates while preserving order
+            # Filter out invalid refs and deduplicate
+            cleaned_refs = [ref for ref in combined_source_references if ref and str(ref).lower() != 'none']
             unique_source_references = []
-            seen = set()
-            for ref in combined_source_references:
+            seen: Set[str] = set()
+            for ref in cleaned_refs:
                 if ref not in seen:
                     unique_source_references.append(ref)
                     seen.add(ref)
