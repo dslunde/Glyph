@@ -1268,6 +1268,7 @@ struct SourceCollectionView: View {
     }
     
     private func createProjectWithSources() {
+        print("🚨🚨🚨 DEBUG: createProjectWithSources() called - THIS SHOULD BE VISIBLE! 🚨🚨🚨")
         print("🔍 DEBUG: createProjectWithSources() called")
         
         // Collect approved sources

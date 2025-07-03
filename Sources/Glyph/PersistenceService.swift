@@ -13,8 +13,23 @@ class PersistenceService: ObservableObject {
             let encoded = try JSONEncoder().encode(projects)
             userDefaults.set(encoded, forKey: projectsKey)
             print("✅ Saved \(projects.count) projects")
+            
+            // Debug: Show details of what's being saved
+            for (index, project) in projects.enumerated() {
+                print("   Project \(index): \(project.name)")
+                print("     - ID: \(project.id)")
+                print("     - Sources: \(project.sources?.count ?? 0)")
+                print("     - Has graph: \(project.graphData != nil)")
+                if let sources = project.sources {
+                    for (sourceIndex, source) in sources.prefix(2).enumerated() {
+                        print("     - Source \(sourceIndex): \(source.title)")
+                    }
+                }
+            }
+            
         } catch {
             print("❌ Failed to save projects: \(error)")
+            print("🔍 Error details: \(error.localizedDescription)")
         }
     }
     
@@ -24,12 +39,34 @@ class PersistenceService: ObservableObject {
             return []
         }
         
+        print("🔍 DEBUG: Found project data of size: \(data.count) bytes")
+        
         do {
             let projects = try JSONDecoder().decode([Project].self, from: data)
             print("✅ Loaded \(projects.count) projects")
+            
+            // Debug: Show details of what's being loaded
+            for (index, project) in projects.enumerated() {
+                print("   Project \(index): \(project.name)")
+                print("     - ID: \(project.id)")
+                print("     - Sources: \(project.sources?.count ?? 0)")
+                print("     - Has graph: \(project.graphData != nil)")
+                if let sources = project.sources {
+                    for (sourceIndex, source) in sources.prefix(2).enumerated() {
+                        print("     - Source \(sourceIndex): \(source.title)")
+                    }
+                }
+            }
+            
             return projects
         } catch {
             print("❌ Failed to load projects: \(error)")
+            print("🔍 Error details: \(error.localizedDescription)")
+            print("🔍 This might be due to project structure changes")
+            
+            // Try to recover by clearing corrupted data
+            print("🗑️ Clearing potentially corrupted project data")
+            userDefaults.removeObject(forKey: projectsKey)
             return []
         }
     }
@@ -130,6 +167,35 @@ class PersistenceService: ObservableObject {
                 print("❌ Failed to clear cache: \(error)")
             }
         }
+    }
+    
+    /// Clear all app data for debugging (DESTRUCTIVE)
+    func clearAllAppData() {
+        print("🚨 CLEARING ALL APP DATA - This is destructive!")
+        
+        // Clear projects
+        userDefaults.removeObject(forKey: projectsKey)
+        
+        // Clear settings
+        userDefaults.removeObject(forKey: settingsKey)
+        
+        // Clear cache
+        clearCache()
+        
+        // Clear any graph cache directories
+        let cacheDirectory = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+        let glyphCachePath = cacheDirectory.appendingPathComponent("com.glyph.knowledge-graph-explorer")
+        
+        if FileManager.default.fileExists(atPath: glyphCachePath.path) {
+            do {
+                try FileManager.default.removeItem(at: glyphCachePath)
+                print("🧹 Graph cache cleared")
+            } catch {
+                print("❌ Failed to clear graph cache: \(error)")
+            }
+        }
+        
+        print("✅ All app data cleared")
     }
     
     /// Get app storage information

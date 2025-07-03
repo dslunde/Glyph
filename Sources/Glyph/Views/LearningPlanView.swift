@@ -197,9 +197,18 @@ struct LearningPlanView: View {
             if let projectSources = project.sources {
                 sources = projectSources.map { $0.toDictionary() }
                 print("✅ Using \(projectSources.count) stored sources for learning plan generation")
+                print("🔍 DEBUG: Project ID: \(project.id)")
+                print("🔍 DEBUG: Project name: \(project.name)")
+                if let firstSource = projectSources.first {
+                    print("🔍 DEBUG: First source: \(firstSource.title)")
+                    print("🔍 DEBUG: First source content preview: \(String(firstSource.content.prefix(100)))")
+                }
             } else {
                 sources = []
                 print("⚠️ No sources found in project - generating learning plan without source context")
+                print("🔍 DEBUG: Project ID: \(project.id)")
+                print("🔍 DEBUG: Project name: \(project.name)")
+                print("🔍 DEBUG: Project sources is nil: \(project.sources == nil)")
             }
             
             let result = try await pythonService.generateLearningPlan(

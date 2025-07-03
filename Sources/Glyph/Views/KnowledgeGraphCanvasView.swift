@@ -265,6 +265,10 @@ struct KnowledgeGraphCanvasView: View {
         .onChange(of: project?.id) { _ in
             checkProjectChange()
         }
+        .onChange(of: project?.graphData?.nodes.count) { _ in
+            // Reload graph data when the project's graph data changes
+            loadProjectGraphData()
+        }
         .onChange(of: nodeSpacing) { _ in
             applyNodeSpacing()
         }
