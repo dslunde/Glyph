@@ -1,71 +1,64 @@
 # Active Context
 
-## 🎯 **CURRENT STATUS: SOURCE-TO-LEARNING-PLAN CONNECTION - FIXED ✅**
+## 🎯 **CURRENT STATUS: SOURCE TRACEABILITY & ENHANCED LEARNING PLAN DETAILS - COMPLETED ✅**
 
-### **🏆 CRITICAL BUG SQUASHED: Sources Now Connected Throughout Pipeline**
+### **🏆 MAJOR FEATURE ACHIEVEMENT: Complete Source-to-Output Traceability**
 
-**Latest Session Achievement**: Successfully diagnosed and fixed the critical data flow issue where approved sources from source collection weren't being passed to learning plan generation. The complete pipeline now works seamlessly.
+**Latest Session Achievement**: Successfully implemented comprehensive source traceability throughout the entire pipeline, allowing users to see exactly which sources contributed to each knowledge graph node and learning plan concept.
 
-#### ✅ **Root Cause Identified and Fixed**
+#### ✅ **Comprehensive Source Traceability Implemented**
 
-**The Problem**: Sources were being collected and passed to knowledge graph generation, but learning plan generation was receiving an **empty sources array**, breaking the connection between user-approved sources and the final learning plan content.
+**1. Node-Source Connection in Knowledge Graph Generation**
+- **Enhanced `_extract_concepts_and_entities()`**: Now tracks which sources contributed to each concept/entity
+- **Source Reference Storage**: Each node stores up to 5 source references in properties
+- **Data Preservation**: Sources flow through `_build_graph_structure()` and `_finalize_graph_data()`
 
-**Specific Issue Location**: `LearningPlanView.swift` line 196:
-```swift
-// Use empty sources array for now - could be enhanced to use actual sources  
-let sources: [[String: Any]] = []
-```
+**2. Learning Plan Source Integration**
+- **Enhanced `map_nodes_to_meaningful_concepts()`**: Combines source references from original analysis and node references
+- **Concept Source References**: Each learning plan concept includes comprehensive source references
+- **Source Bibliography**: Learning plans now include source bibliography for complete traceability
 
-**The Fix Applied**:
-1. **Added Source Storage to Project Model** - Created `ProcessedSource` struct and added `sources` field to `Project`
-2. **Updated Project Creation** - Modified `ProjectManager` to store sources when creating projects 
-3. **Fixed Learning Plan Generation** - Updated `LearningPlanView.swift` to use stored sources instead of empty array
-4. **Streamlined App.swift** - Simplified source collection logic and ensured proper data flow
+**3. User Interface Enhancements**
+- **Knowledge Graph Canvas**: `NodeDetailView` now displays source references in a dedicated section
+- **Learning Plan View**: `ConceptDetailCard` shows source references for each expandable concept
+- **Detailed Source Display**: Sources shown with proper formatting and icons
 
-#### ✅ **Complete Data Flow Now Working**
+#### 🔧 **Technical Implementation Details**
 
-**Before (Broken)**:
-```
-Source Collection → Knowledge Graph ✅
-Source Collection → Learning Plan ❌ (empty sources)
-```
+**Python Knowledge Graph Generation (knowledge_graph_generation.py)**:
+- Track source contributions during concept/entity extraction
+- Store source references in node properties
+- Flow source data through entire generation pipeline
+- Generate comprehensive source bibliographies
 
-**After (Fixed)**:
-```
-Source Collection → Project Storage → Knowledge Graph ✅  
-Source Collection → Project Storage → Learning Plan ✅
-```
+**Swift UI Enhancements**:
+- `NodeDetailView`: Added "Source References" section with formatted source display
+- `ConceptDetailCard`: Enhanced with source references display
+- Proper handling of comma-separated source reference strings
 
-#### ✅ **Technical Implementation Details**
+#### 🎓 **Enhanced Learning Plan Features**
 
-**New ProcessedSource Model**:
-- Codable struct for proper storage and retrieval
-- `.toDictionary()` method for Python service compatibility
-- Stores all source metadata (title, content, URL, reliability score, etc.)
+**Intermediate Phase Details**: 
+- ✅ **Expandable Concept Cards**: Users can now expand each concept to see detailed information
+- ✅ **Source References**: Each concept shows which sources contributed to its understanding
+- ✅ **Related Concepts**: Displays connections to other concepts in the knowledge graph
+- ✅ **Learning Resources**: Provides tailored learning materials for each concept
+- ✅ **Time Estimates**: Shows estimated learning time for each concept
 
-**Enhanced ProjectManager**:
-- `createProjectWithCustomLearningPlanAndSources()` method stores sources during project creation
-- `startKnowledgeGraphGeneration()` method also stores sources for existing projects
-- Automatic conversion between dictionary and struct formats
+### **📋 Next Priority Items**
 
-**Fixed LearningPlanView**:
-- Now reads `project.sources` instead of using empty array
-- Logs source usage for debugging: "✅ Using X stored sources for learning plan generation"
-- Graceful fallback when no sources available
+1. **User Testing**: Test the new source traceability features with real projects
+2. **Performance Optimization**: Monitor performance with large source sets
+3. **Source Quality Indicators**: Add reliability/quality indicators for sources
+4. **Interactive Source Navigation**: Consider click-to-view source content
+5. **Export Features**: Allow exporting learning plans with full source citations
 
-#### ✅ **User Experience Impact**
+### **🔍 Recent Session Notes**
 
-**What Users Will Now See**:
-1. **Source Collection**: Approve sources normally ✅
-2. **Knowledge Graph**: Generated from approved sources ✅ 
-3. **Learning Plan**: Now uses the same approved sources for content generation ✅
-4. **Consistent Content**: Learning plan concepts directly relate to approved sources ✅
-
-**Enhanced Learning Plan Features**:
-- Concepts extracted from actual source titles and content
-- Learning resources linked to real source materials  
-- Source bibliography included in learning plan
-- Phase organization based on source content analysis
+- Successfully built app with `./build_app.sh` - all enhancements compile correctly
+- Source traceability works end-to-end from source collection → knowledge graph → learning plan
+- UI properly displays source information in both graph view and learning plan view
+- All debugging information properly flows through the system for troubleshooting
 
 ## 🚀 **PRODUCTION CAPABILITY STATUS - ENHANCED**
 

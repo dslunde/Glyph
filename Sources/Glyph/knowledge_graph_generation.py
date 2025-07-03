@@ -328,6 +328,10 @@ class KnowledgeGraphBuilder:
         concept_counts = Counter()
         entity_counts = Counter()
         
+        # Track which sources contributed to each concept/entity
+        concept_sources = defaultdict(list)
+        entity_sources = defaultdict(list)
+        
         for i, source in enumerate(sources):
             progress = 0.1 + (i / len(sources)) * 0.2
             self._update_progress(progress, f"Processing source {i+1}/{len(sources)}")
@@ -335,25 +339,39 @@ class KnowledgeGraphBuilder:
             content = source.get('content', '')
             title = source.get('title', '')
             url = source.get('url', '')
+            source_title = title if title else f"Source {i+1}"
             
             # Extract text concepts
             text_concepts = self._extract_text_concepts(content + ' ' + title)
             for concept in text_concepts:
                 concept_counts[concept] += 1
+                concept_sources[concept].append({
+                    'title': source_title,
+                    'url': url,
+                    'type': source.get('source_type', 'web')
+                })
             
             # Extract named entities
             text_entities = self._extract_named_entities(content)
             for entity in text_entities:
                 entity_counts[entity] += 1
+                entity_sources[entity].append({
+                    'title': source_title,
+                    'url': url,
+                    'type': source.get('source_type', 'web')
+                })
         
-        # Convert to graph nodes with frequency-based importance
+        # Convert to graph nodes with frequency-based importance and source references
         for concept, count in concept_counts.most_common(500):  # Limit to top 500
             concepts.append({
                 'id': f"concept_{hashlib.md5(concept.encode()).hexdigest()[:8]}",
                 'label': concept,
                 'type': 'concept',
                 'frequency': count,
-                'importance': min(count / len(sources), 1.0)
+                'importance': min(count / len(sources), 1.0),
+                'source_references': list({
+                    f"{ref['title']} ({ref['type']})" for ref in concept_sources[concept]
+                })[:5]  # Limit to top 5 source references
             })
         
         for entity, count in entity_counts.most_common(300):  # Limit to top 300
@@ -362,7 +380,10 @@ class KnowledgeGraphBuilder:
                 'label': entity,
                 'type': 'entity',
                 'frequency': count,
-                'importance': min(count / len(sources), 1.0)
+                'importance': min(count / len(sources), 1.0),
+                'source_references': list({
+                    f"{ref['title']} ({ref['type']})" for ref in entity_sources[entity]
+                })[:5]  # Limit to top 5 source references
             })
         
         print(f"📝 Extracted {len(concepts)} concepts and {len(entities)} entities")
@@ -475,7 +496,8 @@ class KnowledgeGraphBuilder:
                 label=node['label'],
                 type=node['type'],
                 frequency=node['frequency'],
-                importance=node['importance']
+                importance=node['importance'],
+                source_references=node.get('source_references', [])
             )
         
         # Create co-occurrence matrix for edge weights
@@ -795,7 +817,8 @@ class KnowledgeGraphBuilder:
                     'pagerank': str(self.centrality_scores.get('pagerank', {}).get(node_id, 0.0)),
                     'eigenvector': str(self.centrality_scores.get('eigenvector', {}).get(node_id, 0.0)),
                     'betweenness': str(self.centrality_scores.get('betweenness', {}).get(node_id, 0.0)),
-                    'closeness': str(self.centrality_scores.get('closeness', {}).get(node_id, 0.0))
+                    'closeness': str(self.centrality_scores.get('closeness', {}).get(node_id, 0.0)),
+                    'source_references': ','.join(node_data.get('source_references', []))
                 },
                 'position': {'x': 0.0, 'y': 0.0}  # Will be set by Swift UI
             }
@@ -1107,7 +1130,8 @@ def map_nodes_to_meaningful_concepts(
                 'description': generate_concept_description(best_match, sources),
                 'resources': generate_enhanced_resources(best_match, sources),
                 'source_references': [best_match['source_title']],
-                'context': best_match['context']
+                'context': best_match['context'],
+                'node_source_references': node.get('source_references', [])
             }
         else:
             # Fall back to node label but enhance it
@@ -1117,8 +1141,9 @@ def map_nodes_to_meaningful_concepts(
                 'type': node.get('type', 'concept'),
                 'description': f"Key concept related to {enhanced_name}",
                 'resources': generate_basic_resources(enhanced_name),
-                'source_references': [],
-                'context': ''
+                'source_references': node.get('source_references', []),
+                'context': '',
+                'node_source_references': node.get('source_references', [])
             }
     
     return enhanced_concepts
@@ -1365,6 +1390,25 @@ def generate_learning_plan_from_minimal_subgraph(
             # Add time estimates based on depth and complexity
             time_estimate = calculate_enhanced_time_estimate(enhanced_concept, depth, score)
             
+            # Combine source references from original analysis and node references
+            combined_source_references = []
+            
+            # Add original source references
+            if enhanced_concept.get('source_references'):
+                combined_source_references.extend(enhanced_concept['source_references'])
+            
+            # Add node source references
+            if enhanced_concept.get('node_source_references'):
+                combined_source_references.extend(enhanced_concept['node_source_references'])
+            
+            # Remove duplicates while preserving order
+            unique_source_references = []
+            seen = set()
+            for ref in combined_source_references:
+                if ref not in seen:
+                    unique_source_references.append(ref)
+                    seen.add(ref)
+            
             concept_info = {
                 'name': enhanced_concept['name'],
                 'type': concept_type,
@@ -1373,7 +1417,7 @@ def generate_learning_plan_from_minimal_subgraph(
                 'importance_score': score,
                 'connections': get_concept_connections(node_id, G, enhanced_concepts),
                 'resources': enhanced_concept['resources'],
-                'source_references': enhanced_concept.get('source_references', [])
+                'source_references': unique_source_references[:5]  # Limit to top 5 references
             }
             
             concept_groups[category].append(concept_info)

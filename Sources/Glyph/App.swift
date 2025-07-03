@@ -2204,14 +2204,55 @@ struct NodeDetailView: View {
                             .italic()
                     } else {
                         ForEach(Array(node.properties.keys.sorted()), id: \.self) { key in
-                            HStack {
-                                Text(key)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text(node.properties[key] ?? "")
-                                    .foregroundColor(.secondary)
+                            // Skip source_references as it has its own section
+                            if key != "source_references" {
+                                HStack {
+                                    Text(key)
+                                        .fontWeight(.medium)
+                                    Spacer()
+                                    Text(node.properties[key] ?? "")
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
+                    }
+                }
+                
+                Section("Source References") {
+                    if let sourceReferences = node.properties["source_references"],
+                       !sourceReferences.isEmpty {
+                        let sources = sourceReferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                        
+                        if sources.isEmpty {
+                            Text("No source references available")
+                                .foregroundColor(.secondary)
+                                .italic()
+                        } else {
+                            Text("This concept was derived from \(sources.count) source\(sources.count == 1 ? "" : "s"):")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.bottom, 4)
+                            
+                            ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                    
+                                    Text(source)
+                                        .font(.caption)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(2)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    } else {
+                        Text("No source references available")
+                            .foregroundColor(.secondary)
+                            .italic()
                     }
                 }
                 

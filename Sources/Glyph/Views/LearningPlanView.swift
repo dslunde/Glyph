@@ -568,6 +568,29 @@ struct ConceptDetailCard: View {
                             }
                         }
                     }
+                    
+                    // Source References
+                    if let sourceReferences = concept["source_references"] as? [String], !sourceReferences.isEmpty {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Source References")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            
+                            ForEach(Array(sourceReferences.enumerated()), id: \.offset) { _, reference in
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                    
+                                    Text(reference)
+                                        .font(.caption)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(2)
+                                }
+                                .padding(.leading, 8)
+                            }
+                        }
+                    }
                 }
             }
         }
