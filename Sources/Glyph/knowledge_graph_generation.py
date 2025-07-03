@@ -79,6 +79,14 @@ except ImportError:
     SENTENCE_TRANSFORMERS_AVAILABLE = False
 
 try:
+    from sklearn.metrics.pairwise import cosine_similarity
+    SKLEARN_AVAILABLE = True
+    print("✅ Scikit-learn available for similarity calculations")
+except ImportError:
+    print("❌ Scikit-learn not available - topic relevance filtering will be limited")
+    SKLEARN_AVAILABLE = False
+
+try:
     from transformers import pipeline  # type: ignore
     TRANSFORMERS_AVAILABLE = True
     print("✅ Transformers available")
@@ -99,11 +107,58 @@ except ImportError:
         return decorator
 
 
+class TopicRelevanceConfig:
+    """Configuration for topic relevance filtering in knowledge graph generation.
+    
+    This class defines the parameters used to filter nodes based on their relevance
+    to the main topic of study, helping to create more focused knowledge graphs.
+    
+    Attributes:
+        relevance_threshold: Minimum semantic similarity score for nodes to be retained.
+        enable_semantic_filtering: Whether to use semantic similarity filtering.
+        enable_context_filtering: Whether to use context-based filtering as fallback.
+        max_nodes_before_filtering: Maximum number of nodes before applying filtering.
+        similarity_batch_size: Batch size for similarity calculations to manage memory.
+    """
+    
+    def __init__(
+        self,
+        relevance_threshold: float = 0.3,
+        enable_semantic_filtering: bool = True,
+        enable_context_filtering: bool = True,
+        max_nodes_before_filtering: int = 1000,
+        similarity_batch_size: int = 32
+    ) -> None:
+        """Initialize topic relevance configuration.
+        
+        Args:
+            relevance_threshold: Minimum similarity score (0.0-1.0) for node retention.
+            enable_semantic_filtering: Enable semantic similarity filtering.
+            enable_context_filtering: Enable context-based filtering fallback.
+            max_nodes_before_filtering: Apply filtering only if nodes exceed this count.
+            similarity_batch_size: Batch size for similarity calculations.
+        """
+        self.relevance_threshold = relevance_threshold
+        self.enable_semantic_filtering = enable_semantic_filtering
+        self.enable_context_filtering = enable_context_filtering
+        self.max_nodes_before_filtering = max_nodes_before_filtering
+        self.similarity_batch_size = similarity_batch_size
+
+
 class KnowledgeGraphBuilder:
     """Main class for building knowledge graphs from source collections."""
     
-    def __init__(self, cache_dir: Optional[str] = None):
-        """Initialize the knowledge graph builder."""
+    def __init__(
+        self, 
+        cache_dir: Optional[str] = None,
+        topic_config: Optional[TopicRelevanceConfig] = None
+    ) -> None:
+        """Initialize the knowledge graph builder.
+        
+        Args:
+            cache_dir: Directory for caching models and intermediate results.
+            topic_config: Configuration for topic relevance filtering.
+        """
         if cache_dir is None:
             # Debug environment variable detection
             app_bundle_mode = os.getenv('APP_BUNDLE_MODE')
@@ -155,6 +210,9 @@ class KnowledgeGraphBuilder:
         # Progress tracking
         self.progress_callback = None
         self.current_progress = 0.0
+        
+        # Topic relevance configuration
+        self.topic_config = topic_config or TopicRelevanceConfig()
         
         self._initialize_nlp_components()
     
@@ -259,8 +317,20 @@ class KnowledgeGraphBuilder:
         sources: List[Dict[str, Any]], 
         topic: str = ""
     ) -> Dict[str, Any]:
-        """Build knowledge graph from collected sources."""
+        """Build knowledge graph from collected sources with topic relevance filtering.
+        
+        Args:
+            sources: List of source documents to process.
+            topic: Main topic/subject for relevance filtering.
+            
+        Returns:
+            Dictionary containing the generated knowledge graph data.
+        """
         print(f"🏗️ Building knowledge graph from {len(sources)} sources...")
+        if topic.strip():
+            print(f"🎯 Topic focus: '{topic}' (filtering enabled)")
+        else:
+            print("🎯 No specific topic focus (filtering disabled)")
         
         # Clear status file from any previous runs
         self._clear_status_file()
@@ -274,28 +344,33 @@ class KnowledgeGraphBuilder:
         self.centrality_scores.clear()
         
         try:
-            # Step 1: Extract concepts and entities (30%)
+            # Step 1: Extract concepts and entities (25%)
             self._update_progress(0.1, "Extracting concepts and entities")
             concepts, entities = self._extract_concepts_and_entities(sources)
             
-            # Step 2: Build initial graph (50%)
-            self._update_progress(0.3, "Building initial graph structure")
+            # Step 2: Build initial graph (40%)
+            self._update_progress(0.25, "Building initial graph structure")
             self._build_graph_structure(concepts, entities, sources)
             
-            # Step 3: Calculate centrality metrics (70%)
+            # Step 3: Filter by topic relevance (50%) - NEW STEP
+            if topic.strip():
+                self._update_progress(0.4, "Filtering nodes by topic relevance")
+                self._filter_nodes_by_topic_relevance(topic, sources)
+            
+            # Step 4: Calculate centrality metrics (65%)
             self._update_progress(0.5, "Calculating centrality metrics")
             self._calculate_centrality_metrics()
             
-            # Step 4: Find minimal subgraph (85%)
-            self._update_progress(0.7, "Finding minimal subgraph")
+            # Step 5: Find minimal subgraph (80%)
+            self._update_progress(0.65, "Finding minimal subgraph")
             self._find_minimal_subgraph()
             
-            # Step 5: Generate embeddings (95%)
-            self._update_progress(0.85, "Generating node embeddings")
+            # Step 6: Generate embeddings (90%)
+            self._update_progress(0.8, "Generating node embeddings")
             self._generate_node_embeddings()
             
-            # Step 6: Finalize results (100%)
-            self._update_progress(0.95, "Finalizing results")
+            # Step 7: Finalize results (100%)
+            self._update_progress(0.9, "Finalizing results")
             result = self._finalize_graph_data()
             
             self._update_progress(1.0, "Knowledge graph construction complete")
@@ -800,6 +875,223 @@ class KnowledgeGraphBuilder:
         except Exception as e:
             print(f"❌ Embedding generation failed: {e}")
     
+    def _calculate_topic_relevance_scores(self, topic: str) -> Dict[str, float]:
+        """Calculate semantic similarity scores between nodes and the main topic.
+        
+        Uses sentence transformers to compute cosine similarity between node labels
+        and the main topic, providing a relevance score for each node.
+        
+        Args:
+            topic: The main topic/subject for relevance scoring.
+            
+        Returns:
+            Dictionary mapping node IDs to their relevance scores (0.0-1.0).
+            
+        Raises:
+            Exception: If similarity calculation fails, returns empty dictionary.
+        """
+        if not self.sentence_transformer or not topic.strip():
+            print("⚠️ No sentence transformer or topic available - skipping relevance scoring")
+            return {}
+        
+        if not SKLEARN_AVAILABLE:
+            print("⚠️ Scikit-learn not available - using fallback relevance scoring")
+            return self._calculate_context_relevance_scores(topic)
+        
+        print(f"🎯 Calculating topic relevance scores for '{topic}'...")
+        
+        try:
+            # Generate topic embedding
+            topic_embedding = self.sentence_transformer.encode([topic])
+            
+            # Collect node texts and IDs
+            node_texts = []
+            node_ids = []
+            
+            for node_id in self.graph.nodes():
+                node_data = self.graph.nodes[node_id]
+                # Combine label with type for better context
+                label = node_data.get('label', '')
+                node_type = node_data.get('type', '')
+                text = f"{label} {node_type}".strip()
+                node_texts.append(text)
+                node_ids.append(node_id)
+            
+            if not node_texts:
+                print("⚠️ No nodes found for relevance scoring")
+                return {}
+            
+            # Generate node embeddings in batches to manage memory
+            batch_size = self.topic_config.similarity_batch_size
+            all_embeddings = []
+            
+            for i in range(0, len(node_texts), batch_size):
+                batch_texts = node_texts[i:i + batch_size]
+                batch_embeddings = self.sentence_transformer.encode(batch_texts)
+                all_embeddings.extend(batch_embeddings)
+            
+            # Calculate cosine similarity scores
+            node_embeddings = np.array(all_embeddings)
+            similarity_scores = cosine_similarity(node_embeddings, topic_embedding).flatten()
+            
+            # Create relevance score dictionary
+            relevance_scores = {}
+            for node_id, score in zip(node_ids, similarity_scores):
+                relevance_scores[node_id] = float(score)
+            
+            # Log statistics
+            avg_score = np.mean(similarity_scores)
+            max_score = np.max(similarity_scores)
+            min_score = np.min(similarity_scores)
+            
+            print(f"✅ Relevance scores calculated for {len(relevance_scores)} nodes")
+            print(f"📊 Score statistics - Avg: {avg_score:.3f}, Max: {max_score:.3f}, Min: {min_score:.3f}")
+            
+            return relevance_scores
+            
+        except Exception as e:
+            print(f"❌ Topic relevance calculation failed: {e}")
+            # Fall back to context-based scoring
+            return self._calculate_context_relevance_scores(topic)
+    
+    def _calculate_context_relevance_scores(self, topic: str) -> Dict[str, float]:
+        """Calculate relevance scores using context analysis when embeddings aren't available.
+        
+        This method serves as a fallback when semantic similarity cannot be computed,
+        using keyword matching and context analysis instead.
+        
+        Args:
+            topic: The main topic/subject for relevance scoring.
+            
+        Returns:
+            Dictionary mapping node IDs to their relevance scores (0.0-1.0).
+        """
+        print(f"🔄 Using context-based relevance scoring for '{topic}'")
+        
+        topic_words = set(topic.lower().split())
+        relevance_scores = {}
+        
+        for node_id in self.graph.nodes():
+            node_data = self.graph.nodes[node_id]
+            node_label = node_data.get('label', '').lower()
+            
+            # Calculate relevance score based on:
+            # 1. Direct word overlap with topic
+            node_words = set(node_label.split())
+            word_overlap = len(topic_words & node_words) / max(len(topic_words), 1)
+            
+            # 2. Frequency-based importance (higher frequency = more relevant)
+            frequency_score = min(node_data.get('frequency', 1) / 10.0, 1.0)
+            
+            # 3. Node type bonus (concepts generally more relevant than entities)
+            type_bonus = 0.1 if node_data.get('type') == 'concept' else 0.0
+            
+            # Combine scores with weights
+            final_score = (word_overlap * 0.6) + (frequency_score * 0.3) + type_bonus
+            relevance_scores[node_id] = min(final_score, 1.0)
+        
+        return relevance_scores
+    
+    def _filter_nodes_by_topic_relevance(self, topic: str, sources: List[Dict[str, Any]]) -> None:
+        """Filter out nodes that don't meet the topic relevance threshold.
+        
+        Removes nodes from the graph that have low semantic similarity to the main topic,
+        helping to create more focused knowledge graphs.
+        
+        Args:
+            topic: The main topic/subject for filtering.
+            sources: List of source documents (used for context-based filtering).
+            
+        Raises:
+            Exception: Logs errors but continues processing with all nodes.
+        """
+        if not topic.strip():
+            print("⚠️ No topic provided - skipping relevance filtering")
+            return
+        
+        # Check if we should apply filtering
+        current_node_count = self.graph.number_of_nodes()
+        if current_node_count < self.topic_config.max_nodes_before_filtering:
+            print(f"📊 Node count ({current_node_count}) below threshold "
+                  f"({self.topic_config.max_nodes_before_filtering}) - skipping filtering")
+            return
+        
+        if not self.topic_config.enable_semantic_filtering:
+            print("🔄 Semantic filtering disabled - skipping relevance filtering")
+            return
+        
+        print(f"🔍 Filtering nodes by topic relevance (threshold: {self.topic_config.relevance_threshold})")
+        
+        try:
+            # Calculate relevance scores
+            relevance_scores = self._calculate_topic_relevance_scores(topic)
+            
+            if not relevance_scores:
+                print("⚠️ No relevance scores calculated - keeping all nodes")
+                return
+            
+            # Identify nodes to remove
+            nodes_to_remove = []
+            nodes_to_keep = []
+            
+            for node_id, score in relevance_scores.items():
+                if score < self.topic_config.relevance_threshold:
+                    nodes_to_remove.append(node_id)
+                else:
+                    nodes_to_keep.append(node_id)
+            
+            # Ensure we don't remove too many nodes (keep at least 10% of original)
+            min_nodes_to_keep = max(10, int(current_node_count * 0.1))
+            
+            if len(nodes_to_keep) < min_nodes_to_keep:
+                print(f"⚠️ Would remove too many nodes ({len(nodes_to_remove)}/{current_node_count})")
+                print(f"🔄 Keeping top {min_nodes_to_keep} nodes instead")
+                
+                # Keep the highest scoring nodes
+                sorted_nodes = sorted(relevance_scores.items(), key=lambda x: x[1], reverse=True)
+                nodes_to_keep = [node_id for node_id, _ in sorted_nodes[:min_nodes_to_keep]]
+                nodes_to_remove = [node_id for node_id, _ in sorted_nodes[min_nodes_to_keep:]]
+            
+            # Remove irrelevant nodes
+            if nodes_to_remove:
+                self.graph.remove_nodes_from(nodes_to_remove)
+                removed_count = len(nodes_to_remove)
+                remaining_count = self.graph.number_of_nodes()
+                
+                print(f"🧹 Removed {removed_count} irrelevant nodes "
+                      f"({removed_count/current_node_count:.1%} of original)")
+                print(f"📊 Remaining: {remaining_count} nodes "
+                      f"({remaining_count/current_node_count:.1%} of original)")
+                
+                # Store relevance scores in node properties for later use
+                for node_id in self.graph.nodes():
+                    if node_id in relevance_scores:
+                        self.graph.nodes[node_id]['topic_relevance'] = relevance_scores[node_id]
+                
+                # Log some examples of removed vs kept nodes
+                if removed_count > 0:
+                    removed_examples = [(node_id, relevance_scores[node_id]) 
+                                      for node_id in nodes_to_remove[:3]]
+                    kept_examples = [(node_id, relevance_scores[node_id]) 
+                                   for node_id in nodes_to_keep[:3]]
+                    
+                    print("🗑️  Examples of removed nodes:")
+                    for node_id, score in removed_examples:
+                        label = self.graph.nodes.get(node_id, {}).get('label', node_id)
+                        print(f"   - {label} (score: {score:.3f})")
+                    
+                    print("✅ Examples of kept nodes:")
+                    for node_id, score in kept_examples:
+                        label = self.graph.nodes[node_id].get('label', node_id)
+                        print(f"   - {label} (score: {score:.3f})")
+                        
+            else:
+                print("✅ All nodes meet relevance threshold - no filtering needed")
+                
+        except Exception as e:
+            print(f"❌ Topic relevance filtering failed: {e}")
+            print("🔄 Continuing with all nodes")
+    
     def _finalize_graph_data(self) -> Dict[str, Any]:
         """Finalize and format graph data for Swift consumption."""
         
@@ -818,6 +1110,7 @@ class KnowledgeGraphBuilder:
                     'eigenvector': str(self.centrality_scores.get('eigenvector', {}).get(node_id, 0.0)),
                     'betweenness': str(self.centrality_scores.get('betweenness', {}).get(node_id, 0.0)),
                     'closeness': str(self.centrality_scores.get('closeness', {}).get(node_id, 0.0)),
+                    'topic_relevance': str(node_data.get('topic_relevance', 0.0)),
                     'source_references': ','.join(node_data.get('source_references', []))
                 },
                 'position': {'x': 0.0, 'y': 0.0}  # Will be set by Swift UI
@@ -877,13 +1170,15 @@ class KnowledgeGraphBuilder:
             'total_edges': len(edges),
             'minimal_nodes': len(minimal_nodes),
             'minimal_edges': len(minimal_edges),
-            'algorithms': ['pagerank', 'eigenvector', 'betweenness', 'closeness', 'hybrid_mst'],
+            'algorithms': ['pagerank', 'eigenvector', 'betweenness', 'closeness', 'hybrid_mst', 'topic_relevance'],
             'last_analysis': datetime.now().isoformat(),
             'has_embeddings': len(self.node_embeddings) > 0,
             'connected_components': nx.number_weakly_connected_components(self.graph),
             'minimal_connected_components': nx.number_weakly_connected_components(self.minimal_subgraph) if self.minimal_subgraph else 0,
             'graph_density': nx.density(self.graph),
             'minimal_graph_created': self.minimal_subgraph is not None and self.minimal_subgraph.number_of_nodes() > 0,
+            'topic_relevance_enabled': self.topic_config.enable_semantic_filtering,
+            'topic_relevance_threshold': self.topic_config.relevance_threshold,
             'run_id': self.run_id,
             'cache_directory': self.cache_dir
         }
@@ -907,9 +1202,23 @@ class KnowledgeGraphBuilder:
 def generate_knowledge_graph_from_sources(
     sources: List[Dict[str, Any]], 
     topic: str = "",
-    progress_callback: Optional[Callable] = None
+    progress_callback: Optional[Callable] = None,
+    topic_config: Optional[TopicRelevanceConfig] = None
 ) -> Dict[str, Any]:
-    """Main function for generating knowledge graph from sources."""
+    """Main function for generating knowledge graph from sources with topic relevance filtering.
+    
+    Args:
+        sources: List of source documents to process.
+        topic: Main topic/subject for relevance filtering.
+        progress_callback: Optional callback function for progress updates.
+        topic_config: Configuration for topic relevance filtering.
+        
+    Returns:
+        Dictionary containing the generated knowledge graph data.
+        
+    Raises:
+        Exception: Returns error dictionary if generation fails.
+    """
     if not sources:
         return {
             'success': False,
@@ -920,7 +1229,7 @@ def generate_knowledge_graph_from_sources(
         }
     
     try:
-        builder = KnowledgeGraphBuilder()
+        builder = KnowledgeGraphBuilder(topic_config=topic_config)
         if progress_callback:
             builder.set_progress_callback(progress_callback)
         
@@ -936,6 +1245,39 @@ def generate_knowledge_graph_from_sources(
             'edges': [],
             'metadata': {}
         }
+
+
+def create_topic_relevance_config(
+    relevance_threshold: float = 0.3,
+    enable_filtering: bool = True,
+    max_nodes_before_filtering: int = 1000
+) -> TopicRelevanceConfig:
+    """Create a topic relevance configuration with common settings.
+    
+    Args:
+        relevance_threshold: Minimum similarity score for node retention (0.0-1.0).
+        enable_filtering: Whether to enable topic relevance filtering.
+        max_nodes_before_filtering: Apply filtering only if nodes exceed this count.
+        
+    Returns:
+        TopicRelevanceConfig instance with specified settings.
+        
+    Examples:
+        >>> # Conservative filtering (keeps more nodes)
+        >>> config = create_topic_relevance_config(relevance_threshold=0.2)
+        >>> 
+        >>> # Aggressive filtering (removes more irrelevant nodes)
+        >>> config = create_topic_relevance_config(relevance_threshold=0.5)
+        >>>
+        >>> # Disable filtering entirely
+        >>> config = create_topic_relevance_config(enable_filtering=False)
+    """
+    return TopicRelevanceConfig(
+        relevance_threshold=relevance_threshold,
+        enable_semantic_filtering=enable_filtering,
+        enable_context_filtering=enable_filtering,
+        max_nodes_before_filtering=max_nodes_before_filtering
+    )
 
 # MARK: - Helper Functions for Enhanced Learning Plan Generation
 
