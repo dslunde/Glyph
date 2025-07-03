@@ -111,7 +111,7 @@ struct LearningPlanView: View {
             } else {
                 // Empty state - show default or prompt to generate
                 VStack(spacing: 20) {
-                    Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
+                                            Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
                         .frame(width: 48, height: 48)

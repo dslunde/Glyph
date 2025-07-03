@@ -370,7 +370,7 @@ struct AnalysisWelcomeView: View {
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 16) {
-                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
+                                        Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 64, height: 64)

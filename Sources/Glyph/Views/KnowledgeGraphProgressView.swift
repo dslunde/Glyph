@@ -20,7 +20,7 @@ struct KnowledgeGraphProgressView: View {
         VStack(spacing: 24) {
             // Header
             VStack(spacing: 8) {
-                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
+                Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 48, height: 48)

@@ -43,7 +43,7 @@ struct ContentView: View {
                         // Header with New Project button
                         HStack {
                             HStack(spacing: 8) {
-                                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
+                                Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: 24, height: 24)
@@ -132,7 +132,7 @@ struct ContentView: View {
                     } else {
                         // Welcome View
                         VStack {
-                            Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
+                            Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 64, height: 64)
@@ -2471,7 +2471,7 @@ struct LoginView: View {
         VStack(spacing: 30) {
             // App branding
             VStack(spacing: 16) {
-                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
+                Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 80, height: 80)
