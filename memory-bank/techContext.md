@@ -27,8 +27,9 @@ numpy==2.3.1                    # Numerical computing
 scipy==1.14.1                   # Scientific computing
 scikit-learn==1.7.0             # Machine learning algorithms
 
-# Graph Analysis
-networkx==3.5                   # Graph theory and analysis
+# Graph Analysis & Advanced Analytics
+networkx==3.5                   # Graph theory and analysis (AI Insights)
+openai>=1.0.0                   # OpenAI API for LLM enhancement (AI Insights)
 
 # Modern NLP & Language Models
 transformers>=4.53.0            # Hugging Face transformers
@@ -211,4 +212,10 @@ Glyph/
 - **Swift Concurrency**: Adoption of async/await patterns
 - **SwiftUI Updates**: Leverage new framework capabilities
 - **Python Ecosystem**: Stay current with ML/NLP library evolution
-- **macOS Features**: Integrate new system capabilities as available 
+- **macOS Features**: Integrate new system capabilities as available
+
+### AI Insights System Dependencies
+- **NetworkX 3.5**: Core graph analysis algorithms (centrality, clustering, community detection)
+- **OpenAI API**: Optional LLM enhancement for deeper insights (fallback to graph-based analysis)
+- **Advanced Analysis Module**: `advanced_analysis.py` with sophisticated graph algorithms
+- **Analysis Data Models**: Comprehensive Swift models for all insight types 

@@ -16,157 +16,297 @@
 └─────────────────┘    └─────────────────┘    └─────────────────┘
 ```
 
+### AI Insights System Architecture
+
+#### Tab-Based Interface Design Pattern
+```
+AIInsightsView (Main Container)
+├── TabView Navigation
+│   ├── Analysis Tab → AnalysisReportView
+│   │   ├── Welcome Screen (First time)
+│   │   ├── Progress View (During generation)
+│   │   └── Report Display (After completion)
+│   ├── Learning Plan Tab → LearningPlanView
+│   ├── Knowledge Graph Tab → KnowledgeGraphCanvasView
+│   └── Chat Tab → ChatView
+├── State Management (@State, @StateObject)
+├── Progress Tracking (Real-time updates)
+└── Window Management (Fixed constraints)
+```
+
+#### Analysis Data Model Pattern
+```
+AnalysisReport (Root Model)
+├── KnowledgeGap
+│   ├── gapType: GapType enum
+│   ├── description: String
+│   ├── importance: Int (1-10)
+│   └── suggestedSources: [String]
+├── CounterintuitiveInsight
+│   ├── insight: String
+│   ├── commonBelief: String
+│   ├── evidence: String
+│   └── confidenceLevel: Int (1-10)
+├── UncommonInsight
+│   ├── insight: String
+│   ├── rarity: Int (1-10)
+│   ├── potentialImpact: String
+│   └── sourceReliability: Int (1-10)
+└── Recommendation
+    ├── action: String
+    ├── priority: Priority enum
+    ├── timeframe: String
+    └── expectedOutcome: String
+```
+
+#### Advanced Analysis Engine Pattern
+```
+advanced_analysis.py (Python Module)
+├── Graph Analysis Pipeline
+│   ├── centrality_analysis() → Node importance scoring
+│   ├── community_detection() → Cluster identification
+│   ├── knowledge_gap_detection() → Missing connections
+│   └── counterintuitive_insights() → Unexpected relationships
+├── LLM Integration (Optional)
+│   ├── OpenAI API calls for enhanced insights
+│   ├── Intelligent prompting for analysis
+│   └── Fallback to graph-based analysis
+└── Result Formatting
+    ├── Swift-compatible data structures
+    ├── JSON serialization
+    └── Error handling with graceful degradation
+```
+
 ### Core Design Patterns
 
-#### Model-View-ViewModel (MVVM)
-- **Views**: SwiftUI components for interface
-- **ViewModels**: Business logic and state management
-- **Models**: Data structures (Project, GraphNode, GraphEdge)
-- **Services**: Abstracted functionality (Python integration, persistence)
+#### Model-View-ViewModel (MVVM) - Enhanced
+- **Views**: SwiftUI components for interface (now includes AI Insights tab system)
+- **ViewModels**: Business logic and state management (analysis generation, progress tracking)
+- **Models**: Data structures (Project, GraphNode, GraphEdge, AnalysisReport, insights)
+- **Services**: Abstracted functionality (Python integration, persistence, analysis generation)
 
-#### Service Layer Pattern
-- **PythonGraphService**: AI/ML processing bridge
-- **PersistenceService**: Data storage and retrieval
-- **ProjectManager**: Project lifecycle management
+#### Service Layer Pattern - Extended
+- **PythonGraphService**: AI/ML processing bridge (now includes advanced analysis)
+- **PersistenceService**: Data storage and retrieval (now includes analysis reports)
+- **ProjectManager**: Project lifecycle management (now includes analysis persistence)
 - **Authentication Service**: User access control (planned)
 
-#### Bridge Pattern
-- **PythonKit Integration**: Swift ↔ Python communication
-- **Abstract graph operations** from implementation details
-- **Fallback mechanisms** for Swift vs Python algorithms
+#### Bridge Pattern - Advanced Analysis
+- **PythonKit Integration**: Swift ↔ Python communication for analysis
+- **Analysis Abstraction**: Hide complex graph algorithms behind simple interface
+- **Fallback Mechanisms**: Graceful degradation when Python modules unavailable
+- **Type Safety**: Robust data marshalling between Swift and Python
 
 ## Key Technical Decisions
 
-### 1. Native macOS with SwiftUI
-**Decision**: Use SwiftUI for the entire frontend
+### 1. AI Insights Tab System Design
+**Decision**: Implement comprehensive tab-based interface for analysis
 **Rationale**: 
-- Native performance and integration
-- Access to macOS-specific features (Keychain, file system)
-- Consistent with design philosophy (Minimal, Intelligent)
-- Future-proof with Apple's UI framework evolution
+- Separates different analysis types for better user experience
+- Provides clear navigation between analysis, learning, graph, and chat
+- Allows progressive disclosure of complex analysis features
+- Maintains consistency with existing application navigation patterns
 
-### 2. Python 3.13.3 Integration via PythonKit
-**Decision**: Embed Python runtime for AI/ML processing
+### 2. Advanced Python Analysis Engine
+**Decision**: Use NetworkX with optional LLM enhancement for graph analysis
 **Rationale**:
-- Access to mature NLP/ML ecosystem (transformers, NetworkX, etc.)
-- Avoid reimplementing complex algorithms in Swift
-- Leverage existing research and community libraries
-- Maintain performance for computationally intensive tasks
+- NetworkX provides mature graph algorithms (centrality, clustering, community detection)
+- Optional LLM integration allows for deeper insights when API available
+- Fallback to pure graph analysis ensures functionality without external dependencies
+- Separates complex analysis logic from Swift UI code
 
-### 3. Local-First Architecture
-**Decision**: All processing happens locally, no cloud dependencies
+### 3. Comprehensive Data Models
+**Decision**: Create rich Swift models for all analysis types
 **Rationale**:
-- Privacy and security (sensitive research data)
-- Offline capability (essential for research scenarios)
-- No subscription/API costs for users
-- Full user control over data
+- Type safety throughout the analysis pipeline
+- Proper data validation and error handling
+- Seamless integration with existing persistence layer
+- Clear separation of concerns between different insight types
 
-### 4. Hybrid Graph Processing
-**Decision**: Use both Swift (UI interactions) and Python (analysis) for graphs
+### 4. Window Management Strategy
+**Decision**: Fixed frame constraints to prevent dynamic resizing
 **Rationale**:
-- Swift: Fast UI updates, native performance for visualization
-- Python: Access to NetworkX, scikit-learn, advanced algorithms
-- Best of both worlds for different use cases
+- Prevents popup positioning issues during knowledge graph creation
+- Provides consistent user experience across different tabs
+- Avoids UI layout problems with complex analysis displays
+- Maintains proper aspect ratios for graph visualization
 
 ## Component Relationships
 
-### Data Flow Architecture
+### AI Insights Data Flow Architecture
 ```
-User Input → SwiftUI → ViewModel → Service Layer → Python Engine
-    ↑                                    ↓              ↓
-    └── Results ← UI Updates ← State ← Processing ← Analysis
+User Action → AIInsightsView → Analysis Request → PythonGraphService
+    ↑                                               ↓
+    └── Analysis Report ← Swift Models ← Python Results ← advanced_analysis.py
 ```
 
-### Service Dependencies
-- **ProjectManager** depends on PersistenceService
-- **SwiftUI Views** depend on ViewModels and ProjectManager
-- **PythonGraphService** is independent (single responsibility)
-- **ViewModels** orchestrate services but don't directly depend on each other
+### Analysis Generation Pipeline
+```
+Project Data → Graph Analysis → NetworkX Processing → Insight Generation
+    ↓               ↓               ↓                    ↓
+UI Updates ← Progress Tracking ← Python Bridge ← LLM Enhancement (Optional)
+```
+
+### Service Dependencies - Extended
+- **ProjectManager** depends on PersistenceService (now includes analysis reports)
+- **SwiftUI Views** depend on ViewModels and ProjectManager (now includes AI Insights)
+- **PythonGraphService** integrates with advanced_analysis.py (new dependency)
+- **AnalysisReportView** depends on AnalysisReport models (new component)
 
 ## Performance Patterns
 
-### Memory Management
-- **Lazy Loading**: Load projects and graphs on demand
-- **Sparse Representation**: Use efficient data structures for large graphs
-- **Progressive Rendering**: Display graph incrementally as it loads
-- **Memory Monitoring**: Track RAM usage, warn before 10GB limit
+### Memory Management - Analysis Enhanced
+- **Lazy Loading**: Load analysis reports on demand
+- **Efficient Graph Processing**: Use NetworkX optimizations for large graphs
+- **Progressive Analysis**: Display results as they're generated
+- **Memory Monitoring**: Track analysis operations, prevent memory exhaustion
 
-### Algorithmic Efficiency
-- **Accelerate Framework**: Use for matrix operations in Swift
-- **NetworkX Optimization**: Leverage optimized C implementations
-- **Batch Processing**: Process sources in chunks to manage memory
-- **Caching Strategy**: Cache expensive computations (embeddings, centrality)
+### Analysis Optimization
+- **Caching Strategy**: Cache expensive graph computations (centrality, communities)
+- **Batch Processing**: Process insights in batches to manage memory
+- **Async Operations**: Non-blocking analysis generation with progress updates
+- **Fallback Performance**: Efficient mock analysis when Python unavailable
 
 ## Error Handling Patterns
 
-### Graceful Degradation
-- **Python Import Failures**: Fall back to basic graph operations
-- **Large Graph Handling**: Warn user, offer simplified processing
-- **File Processing Errors**: Continue with successful sources, report failures
+### Analysis-Specific Error Handling
+- **Python Module Failures**: Graceful fallback to mock analysis
+- **LLM API Failures**: Continue with graph-based analysis only
+- **Memory Constraints**: Warn user and offer simplified analysis
+- **Window Management**: Prevent UI issues with fixed constraints
 
-### User Communication
-- **Progress Indicators**: Real-time feedback for long operations
-- **Error Messages**: Clear, actionable explanations
-- **Fallback Options**: Alternative approaches when primary fails
+### User Communication - Enhanced
+- **Progress Indicators**: Real-time feedback during analysis generation
+- **Error Messages**: Clear explanations of analysis limitations
+- **Fallback Notifications**: Inform users when using mock vs real analysis
+- **Export Errors**: Graceful handling of export failures with alternative formats
 
 ## Security Patterns
 
-### Data Protection
-- **Local Storage**: SQLite with SQLCipher encryption
-- **Keychain Integration**: Secure credential storage
-- **No Network Communication**: Eliminate remote attack vectors
-- **File System Isolation**: Respect macOS sandboxing where possible
-
-### Input Validation
-- **File Type Checking**: Validate document formats before processing
-- **Size Limits**: Prevent memory exhaustion attacks
-- **Path Traversal Protection**: Secure file access patterns
+### Analysis Data Protection
+- **Local Processing**: All analysis happens locally, no cloud transmission
+- **API Key Security**: Secure OpenAI API key handling with environment variables
+- **Analysis Persistence**: Encrypted storage of analysis reports with SQLite
+- **Data Isolation**: Analysis results stored per-project with proper access control
 
 ## Extensibility Patterns
 
-### Plugin Architecture (Future)
-- **Python Module System**: Load custom analysis modules
-- **Swift Protocol Extensions**: Extend graph visualization
-- **Export Format Plugins**: Support additional output formats
+### Analysis Plugin Architecture
+- **Modular Analysis**: Easy addition of new analysis types
+- **Custom Insights**: Framework for user-defined insight generation
+- **Export Formats**: Extensible export system for different output formats
+- **LLM Models**: Support for different AI models beyond OpenAI
 
-### Configuration Management
-- **User Preferences**: Persistent settings for behavior customization
-- **Algorithm Selection**: Choose between Swift/Python implementations
-- **Performance Tuning**: Adjust processing parameters based on hardware
+### Configuration Management - Enhanced
+- **Analysis Preferences**: User customization of analysis depth and types
+- **Performance Tuning**: Adjustable parameters for analysis algorithms
+- **UI Customization**: Configurable analysis display options
+- **Export Settings**: User-defined export formats and destinations
 
 ## Testing Patterns
 
-### Unit Testing Strategy
-- **Swift Components**: XCTest for ViewModels and Services
-- **Python Components**: pytest for graph algorithms
-- **Integration Points**: Test PythonKit bridge thoroughly
-- **Mock Services**: Abstract external dependencies
+### Analysis Testing Strategy
+- **Unit Testing**: Test individual analysis functions and data models
+- **Integration Testing**: Test Swift-Python analysis pipeline
+- **Performance Testing**: Validate analysis speed with large graphs
+- **UI Testing**: Test tab navigation and analysis display
 
-### Performance Testing
-- **Memory Usage**: Automated testing with large graphs
-- **Processing Speed**: Benchmark key algorithms
-- **UI Responsiveness**: Measure frame rates during graph interactions
+### Mock Analysis Patterns
+- **Comprehensive Mocks**: Rich mock data for all analysis types
+- **Fallback Testing**: Test graceful degradation scenarios
+- **Performance Baseline**: Use mocks to establish performance benchmarks
+- **UI Testing**: Mock data enables comprehensive UI testing
 
 ## Development Patterns
 
-### Code Organization
+### Code Organization - Enhanced
 ```
 Sources/
 ├── Glyph/
 │   ├── App.swift              # Entry point
-│   ├── Models/                # Data structures
+│   ├── Models/                # Data structures (now includes AnalysisReport)
+│   │   └── AnalysisReport.swift
 │   ├── ViewModels/           # Business logic
 │   ├── Views/                # SwiftUI components
+│   │   ├── AIInsightsView.swift
+│   │   └── AnalysisReportView.swift
 │   ├── Services/             # Core functionality
+│   ├── advanced_analysis.py  # Python analysis engine
 │   └── Resources/            # Assets and data
 └── Tests/                    # Test suites
 ```
 
-### Dependency Management
-- **Swift Package Manager**: Native dependency management
-- **requirements.txt**: Python package specifications
-- **Version Pinning**: Stable versions for production, flexible for development
-- **Conflict Resolution**: Prefer packages without exact version constraints 
+### Analysis-Specific Patterns
+- **Swift-Python Integration**: Clean boundaries between UI and analysis logic
+- **Type Safety**: Comprehensive type annotations in Python and Swift
+- **Error Propagation**: Structured error handling from Python to Swift UI
+- **Progress Communication**: Real-time progress updates during analysis
+
+## Build System Patterns
+
+### Python Module Integration
+- **Automated Embedding**: `advanced_analysis.py` automatically included in app bundle
+- **Dependency Management**: NetworkX and OpenAI packages properly embedded
+- **Build Validation**: Verify all Python modules accessible after build
+- **Version Control**: Track Python module versions with build system
+
+### Analysis Module Deployment
+```
+build_app.sh Enhancement
+├── Custom Python Files Array
+│   ├── "Sources/Glyph/advanced_analysis.py"
+│   ├── "Sources/Glyph/source_collection_workflow.py"
+│   └── Additional analysis modules
+├── Automated Copying
+│   ├── Copy to embedded site-packages
+│   ├── Preserve module structure
+│   └── Handle import dependencies
+└── Build Validation
+    ├── Verify module accessibility
+    ├── Test import statements
+    └── Validate analysis functionality
+```
+
+## UI Design Patterns
+
+### Tab-Based Navigation Pattern
+- **Consistent Interface**: Uniform tab styling across all sections
+- **State Preservation**: Maintain state when switching between tabs
+- **Progressive Disclosure**: Show advanced features as needed
+- **Responsive Design**: Adapt to different window sizes while maintaining constraints
+
+### Analysis Display Pattern
+- **Structured Information**: Clear hierarchy for different insight types
+- **Interactive Elements**: Expandable sections and detailed views
+- **Export Integration**: Seamless export from any analysis view
+- **Progress Visualization**: Real-time progress during analysis generation
+
+### Window Management Pattern
+- **Fixed Constraints**: Prevent dynamic resizing issues
+- **Popup Positioning**: Ensure popups remain visible and accessible
+- **Responsive Layouts**: Adapt content to available space
+- **Consistency**: Maintain uniform appearance across all tabs
+
+## Analysis Algorithm Patterns
+
+### Graph Analysis Pipeline
+```
+Input Graph → Centrality Analysis → Community Detection → Gap Analysis
+     ↓              ↓                      ↓               ↓
+LLM Enhancement → Insight Generation → Result Formatting → UI Display
+```
+
+### Insight Generation Strategy
+- **Multi-Modal Analysis**: Combine graph metrics with LLM insights
+- **Prioritization**: Rank insights by importance and confidence
+- **Validation**: Cross-reference insights across different analysis methods
+- **Fallback Logic**: Ensure results even when LLM unavailable
+
+### Data Processing Pattern
+- **Batch Operations**: Process graph data in manageable chunks
+- **Async Processing**: Non-blocking analysis with progress updates
+- **Memory Efficiency**: Optimize NetworkX operations for large graphs
+- **Error Recovery**: Handle analysis failures gracefully
 
 ## API Integration Patterns
 
