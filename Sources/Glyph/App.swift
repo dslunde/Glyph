@@ -1206,6 +1206,7 @@ struct SourceCollectionView: View {
                 date: formatDate(result.publishedDate),
                 reliabilityScore: Int(result.reliabilityScore),
                 url: result.url,
+                content: result.content,
                 status: .pending
             )
             
@@ -1277,11 +1278,17 @@ struct SourceCollectionView: View {
         
         print("🔍 DEBUG: approvedSources = \(approvedSources.count), validManualSources = \(validManualSources.count)")
         
+        // Log content preview for debugging
+        for (index, source) in approvedSources.enumerated() {
+            let contentPreview = String(source.content.prefix(100))
+            print("🔍 DEBUG: Source \(index + 1) content preview: \(contentPreview)...")
+        }
+        
         // Convert SearchResults to the format expected by knowledge graph generation
         let sourcesForKG = approvedSources.map { searchResult in
             [
                 "title": searchResult.title,
-                "content": "Research article by \(searchResult.author) from \(searchResult.date). Reliability score: \(searchResult.reliabilityScore)%",
+                "content": searchResult.content,  // Use actual content from search results
                 "url": searchResult.url,
                 "score": Double(searchResult.reliabilityScore) / 100.0,
                 "published_date": searchResult.date,
@@ -1300,7 +1307,7 @@ struct SourceCollectionView: View {
             manualSourcesForKG = validManualSources.map { manualSource in
                 [
                     "title": manualSource.type == .file ? "File Source" : "URL Source", 
-                    "content": "Manual source: \(manualSource.path)",
+                    "content": "Manual source: \(manualSource.path). This is a user-provided \(manualSource.type == .file ? "file" : "URL") source that contains relevant information about \(projectConfig.topic).",
                     "url": manualSource.path,
                     "score": 0.8,
                     "published_date": "",
@@ -1311,6 +1318,13 @@ struct SourceCollectionView: View {
         }
         
         let allSources = sourcesForKG + manualSourcesForKG
+        
+        // Log source content size for debugging
+        print("🔍 DEBUG: Total sources for KG: \(allSources.count)")
+        for (index, source) in allSources.enumerated() {
+            let contentSize = (source["content"] as? String)?.count ?? 0
+            print("🔍 DEBUG: Source \(index + 1) content size: \(contentSize) characters")
+        }
         
         // Create learning plan with approved sources instead of Lorem Ipsum
         let learningPlan = generateLearningPlanWithSources(approvedSources: approvedSources, manualSources: validManualSources)
@@ -1490,6 +1504,7 @@ struct SearchResult: Identifiable {
     let date: String
     let reliabilityScore: Int
     let url: String
+    let content: String  // Store actual content from search results
     var status: SearchResultStatus
 }
 
