@@ -67,6 +67,7 @@ struct Project: Identifiable, Codable, Hashable {
     var graphData: GraphData?
     var learningPlan: String
     var sources: [ProcessedSource]?  // Processed sources used for knowledge graph generation
+    var analysisReport: AnalysisReport?  // Advanced analysis report
     
     init(name: String, description: String = "", topic: String = "", 
          depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],

@@ -196,6 +196,7 @@ CUSTOM_PYTHON_FILES=(
     "Sources/Glyph/source_collection_workflow.py"
     "Sources/Glyph/knowledge_graph_generation.py"
     "Sources/Glyph/enhanced_source_processing.py"
+    "Sources/Glyph/advanced_analysis.py"
 )
 
 for file in "${CUSTOM_PYTHON_FILES[@]}"; do

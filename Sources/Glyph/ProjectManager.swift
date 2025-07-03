@@ -219,6 +219,23 @@ class ProjectManager: ObservableObject {
         knowledgeGraphSources = []
     }
     
+    // MARK: - Analysis Report Management
+    
+    func saveAnalysisReport(_ report: AnalysisReport, for project: Project) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        
+        projects[index].analysisReport = report
+        projects[index].updateLastModified()
+        
+        // Update selected project if it's the one we just updated
+        if selectedProject?.id == project.id {
+            selectedProject = projects[index]
+        }
+        
+        saveProjects()
+        print("✅ Analysis report saved for project: \(project.name)")
+    }
+    
     // MARK: - Graph Analysis
     
     @MainActor
