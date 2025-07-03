@@ -74,7 +74,7 @@ struct AIInsightsView: View {
             
             Divider()
             
-            // Tab content
+            // Tab content with fixed frame to prevent window resizing
             Group {
                 switch selectedInsightTab {
                 case .analysis:
@@ -95,7 +95,9 @@ struct AIInsightsView: View {
                     ChatView()
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+        .frame(minWidth: 800, maxWidth: .infinity, minHeight: 600, maxHeight: .infinity)
         .alert("Analysis Error", isPresented: $showingAnalysisError) {
             Button("OK") { }
         } message: {
@@ -536,7 +538,7 @@ struct AnalysisProgressView: View {
         ]
         
         Task { @MainActor in
-            for (index, (targetProgress, step)) in steps.enumerated() {
+            for (_, (targetProgress, step)) in steps.enumerated() {
                 try? await Task.sleep(nanoseconds: 2_000_000_000) // 2 seconds
                 
                 withAnimation(.easeInOut(duration: 1.5)) {

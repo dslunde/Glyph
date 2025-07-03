@@ -150,7 +150,10 @@ struct KnowledgeGraphProgressView: View {
             }
         }
         .padding()
-        .frame(maxWidth: 600, maxHeight: 700)
+        .frame(width: 600, height: 700)
+        .background(Color(nsColor: .windowBackgroundColor))
+        .cornerRadius(16)
+        .shadow(radius: 20)
         .onAppear {
             startKnowledgeGraphGeneration()
         }

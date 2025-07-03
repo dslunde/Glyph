@@ -192,6 +192,8 @@ struct ContentView: View {
                                 projectManager.cancelKnowledgeGraphGeneration()
                             }
                         )
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Color.clear)
                     } else {
                         VStack {
                             Text("Error: No project selected")
@@ -202,6 +204,7 @@ struct ContentView: View {
                             .buttonStyle(.bordered)
                         }
                         .padding()
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                 }
                 .alert("Error", isPresented: $projectManager.showingError) {
