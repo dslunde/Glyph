@@ -32,6 +32,8 @@ struct ContentView: View {
     @StateObject private var authManager = AuthenticationManager()
     @StateObject private var environmentService = EnvironmentService.shared
     
+    @Environment(\.colorScheme) private var colorScheme
+    
     var body: some View {
         Group {
             if authManager.isAuthenticated {
@@ -41,7 +43,7 @@ struct ContentView: View {
                         // Header with New Project button
                         HStack {
                             HStack(spacing: 8) {
-                                Image("glyph_icon")
+                                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
                                     .resizable()
                                     .aspectRatio(contentMode: .fit)
                                     .frame(width: 24, height: 24)
@@ -130,7 +132,7 @@ struct ContentView: View {
                     } else {
                         // Welcome View
                         VStack {
-                            Image("glyph_icon")
+                            Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
                                 .resizable()
                                 .aspectRatio(contentMode: .fit)
                                 .frame(width: 64, height: 64)
@@ -2458,6 +2460,7 @@ struct ProjectInfoView: View {
 
 struct LoginView: View {
     @EnvironmentObject private var authManager: AuthenticationManager
+    @Environment(\.colorScheme) private var colorScheme
     @State private var username = ""
     @State private var password = ""
     @State private var isCreatingAccount = false
@@ -2468,7 +2471,7 @@ struct LoginView: View {
         VStack(spacing: 30) {
             // App branding
             VStack(spacing: 16) {
-                Image("glyph_icon")
+                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 80, height: 80)

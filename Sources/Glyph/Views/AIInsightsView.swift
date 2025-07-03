@@ -364,12 +364,13 @@ struct AnalysisView: View {
 // MARK: - Analysis Welcome View
 
 struct AnalysisWelcomeView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let onGenerate: () -> Void
     
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 16) {
-                Image("glyph_icon")
+                Image(colorScheme == .dark ? "glyph_icon_dark" : "glyph_icon")
                     .resizable()
                     .aspectRatio(contentMode: .fit)
                     .frame(width: 64, height: 64)
