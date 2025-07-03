@@ -1733,7 +1733,6 @@ struct ProjectDetailView: View {
     let project: Project
     @EnvironmentObject private var projectManager: ProjectManager
     @State private var showingProjectInfo = false
-    @State private var selectedTab = 0
     
     var body: some View {
         VStack(spacing: 0) {
@@ -1798,58 +1797,15 @@ struct ProjectDetailView: View {
                 }
                 
                 Spacer()
-                
-                VStack(spacing: 8) {
-                    // Analysis button (disabled for now)
-                    Button(action: {
-                        // Coming soon - do nothing for now
-                    }) {
-                        HStack {
-                            Image(systemName: "sparkles")
-                            Text("Analyze")
-                        }
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .disabled(true)
-                    .overlay(
-                        // Invisible overlay to capture hover for tooltip since disabled buttons don't show help
-                        Rectangle()
-                            .fill(Color.clear)
-                            .help("Coming Soon: Advanced analysis features")
-                    )
-                }
             }
             .padding()
             .background(Color(nsColor: .controlBackgroundColor))
             
             Divider()
             
-            // Tab View as specified in PRD
-            TabView(selection: $selectedTab) {
-                // Learning Plan Tab
-                LearningPlanView()
-                    .tabItem {
-                        Image(systemName: "doc.text")
-                        Text("Learning Plan")
-                    }
-                    .tag(0)
-                
-                // Knowledge Graph Tab  
-                KnowledgeGraphCanvasView()
-                    .tabItem {
-                        Image(systemName: "network")
-                        Text("Knowledge Graph")
-                    }
-                    .tag(1)
-                
-                // Chat Assistant Tab
-                ChatView()
-                    .tabItem {
-                        Image(systemName: "message")
-                        Text("Chat")
-                    }
-                    .tag(2)
-            }
+            // AI Insights with advanced analysis
+            AIInsightsView()
+                .environmentObject(projectManager)
         }
         .sheet(isPresented: $showingProjectInfo) {
             ProjectInfoView(project: project)
