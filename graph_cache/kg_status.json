@@ -1,1 +1,1 @@
-{"run_id": "65628ee6", "timestamp": "2025-07-03T14:03:41.597427", "progress": 1.0, "message": "Knowledge graph construction complete", "current_step": "Knowledge graph construction complete", "completed": true, "error": null, "nodes_count": 24, "edges_count": 6}
+{"run_id": "cbd80907", "timestamp": "2025-07-03T14:16:17.662782", "progress": 1.0, "message": "Knowledge graph construction complete", "current_step": "Knowledge graph construction complete", "completed": true, "error": null, "nodes_count": 15, "edges_count": 40}

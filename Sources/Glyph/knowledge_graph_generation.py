@@ -122,6 +122,8 @@ class TopicRelevanceConfig:
         similarity_batch_size: Batch size for similarity calculations to manage memory.
         enable_source_connectivity_filtering: Whether to filter concepts without source connections.
         require_verified_sources: Whether source references must match original source titles.
+        enable_deduplication: Whether to deduplicate similar concepts in learning plans.
+        deduplication_similarity_threshold: Threshold for fuzzy concept matching (0.0-1.0).
     """
     
     def __init__(
@@ -132,7 +134,9 @@ class TopicRelevanceConfig:
         max_nodes_before_filtering: int = 1000,
         similarity_batch_size: int = 32,
         enable_source_connectivity_filtering: bool = True,
-        require_verified_sources: bool = True
+        require_verified_sources: bool = True,
+        enable_deduplication: bool = True,
+        deduplication_similarity_threshold: float = 0.75
     ) -> None:
         """Initialize topic relevance configuration.
         
@@ -144,6 +148,8 @@ class TopicRelevanceConfig:
             similarity_batch_size: Batch size for similarity calculations.
             enable_source_connectivity_filtering: Filter concepts without source connections.
             require_verified_sources: Require source references to match original sources.
+            enable_deduplication: Whether to deduplicate similar concepts in learning plans.
+            deduplication_similarity_threshold: Threshold for fuzzy concept matching (0.0-1.0).
         """
         self.relevance_threshold = relevance_threshold
         self.enable_semantic_filtering = enable_semantic_filtering
@@ -152,6 +158,8 @@ class TopicRelevanceConfig:
         self.similarity_batch_size = similarity_batch_size
         self.enable_source_connectivity_filtering = enable_source_connectivity_filtering
         self.require_verified_sources = require_verified_sources
+        self.enable_deduplication = enable_deduplication
+        self.deduplication_similarity_threshold = deduplication_similarity_threshold
 
 
 class KnowledgeGraphBuilder:
@@ -1261,7 +1269,9 @@ def create_topic_relevance_config(
     enable_filtering: bool = True,
     max_nodes_before_filtering: int = 1000,
     enable_source_connectivity_filtering: bool = True,
-    require_verified_sources: bool = True
+    require_verified_sources: bool = True,
+    enable_deduplication: bool = True,
+    deduplication_similarity_threshold: float = 0.75
 ) -> TopicRelevanceConfig:
     """Create a topic relevance configuration with common settings.
     
@@ -1271,6 +1281,8 @@ def create_topic_relevance_config(
         max_nodes_before_filtering: Apply filtering only if nodes exceed this count.
         enable_source_connectivity_filtering: Whether to filter concepts without source connections.
         require_verified_sources: Whether source references must match original sources.
+        enable_deduplication: Whether to deduplicate similar concepts in learning plans.
+        deduplication_similarity_threshold: Threshold for fuzzy concept matching (0.0-1.0).
         
     Returns:
         TopicRelevanceConfig instance with specified settings.
@@ -1291,7 +1303,14 @@ def create_topic_relevance_config(
         >>> # Disable all filtering
         >>> config = create_topic_relevance_config(
         ...     enable_filtering=False,
-        ...     enable_source_connectivity_filtering=False
+        ...     enable_source_connectivity_filtering=False,
+        ...     enable_deduplication=False
+        ... )
+        >>> 
+        >>> # Aggressive deduplication
+        >>> config = create_topic_relevance_config(
+        ...     enable_deduplication=True,
+        ...     deduplication_similarity_threshold=0.5
         ... )
     """
     return TopicRelevanceConfig(
@@ -1300,7 +1319,9 @@ def create_topic_relevance_config(
         enable_context_filtering=enable_filtering,
         max_nodes_before_filtering=max_nodes_before_filtering,
         enable_source_connectivity_filtering=enable_source_connectivity_filtering,
-        require_verified_sources=require_verified_sources
+        require_verified_sources=require_verified_sources,
+        enable_deduplication=enable_deduplication,
+        deduplication_similarity_threshold=deduplication_similarity_threshold
     )
 
 # MARK: - Helper Functions for Enhanced Learning Plan Generation
@@ -1769,6 +1790,174 @@ def determine_source_type(source: Dict[str, Any]) -> str:
     else:
         return 'Web Article'
 
+def deduplicate_learning_concepts(concepts: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Deduplicate learning concepts using exact and fuzzy matching.
+    
+    This function removes duplicate concepts from a learning plan by:
+    1. Exact matching (case-insensitive)
+    2. Fuzzy matching for similar concepts (e.g., "Neural Network" vs "Neural Networks")
+    3. Merging source references and keeping the highest importance score
+    
+    Args:
+        concepts: List of concept dictionaries with name, description, etc.
+        
+    Returns:
+        List of deduplicated concepts with merged information.
+    """
+    if not concepts:
+        return []
+    
+    deduplicated = []
+    processed_names = set()
+    
+    # Sort concepts by importance score (highest first) to keep the best version
+    sorted_concepts = sorted(concepts, key=lambda x: x.get('importance_score', 0.0), reverse=True)
+    
+    for concept in sorted_concepts:
+        concept_name = concept.get('name', '').strip()
+        if not concept_name:
+            continue
+            
+        # Normalize for comparison
+        normalized_name = concept_name.lower().strip()
+        
+        # Check for exact duplicates (case-insensitive)
+        if normalized_name in processed_names:
+            # Find the existing concept and merge source references
+            for existing in deduplicated:
+                if existing['name'].lower() == normalized_name:
+                    # Merge source references
+                    existing_refs = set(existing.get('source_references', []))
+                    new_refs = set(concept.get('source_references', []))
+                    combined_refs = list(existing_refs.union(new_refs))[:5]  # Limit to 5
+                    existing['source_references'] = combined_refs
+                    
+                    # Merge resources
+                    existing_resources = existing.get('resources', [])
+                    new_resources = concept.get('resources', [])
+                    for resource in new_resources:
+                        if resource not in existing_resources:
+                            existing_resources.append(resource)
+                    existing['resources'] = existing_resources[:3]  # Limit to 3
+                    
+                    # Update time estimate if new one is higher
+                    existing['time_estimate'] = max(
+                        existing.get('time_estimate', 0),
+                        concept.get('time_estimate', 0)
+                    )
+                    break
+            continue
+        
+        # Check for fuzzy duplicates
+        is_fuzzy_duplicate = False
+        for existing in deduplicated:
+            existing_name = existing['name'].lower().strip()
+            
+            # Check for plural/singular variations
+            if _are_similar_concepts(normalized_name, existing_name):
+                # Merge with existing concept
+                existing_refs = set(existing.get('source_references', []))
+                new_refs = set(concept.get('source_references', []))
+                combined_refs = list(existing_refs.union(new_refs))[:5]
+                existing['source_references'] = combined_refs
+                
+                # Use the more descriptive name (usually the longer one)
+                if len(concept_name) > len(existing['name']):
+                    existing['name'] = concept_name
+                
+                # Merge descriptions (use the longer one)
+                existing_desc = existing.get('description', '')
+                new_desc = concept.get('description', '')
+                if len(new_desc) > len(existing_desc):
+                    existing['description'] = new_desc
+                
+                # Update time estimate if new one is higher
+                existing['time_estimate'] = max(
+                    existing.get('time_estimate', 0),
+                    concept.get('time_estimate', 0)
+                )
+                
+                is_fuzzy_duplicate = True
+                processed_names.add(normalized_name)
+                break
+        
+        if not is_fuzzy_duplicate:
+            # Add as new unique concept
+            deduplicated.append(concept.copy())
+            processed_names.add(normalized_name)
+    
+    return deduplicated
+
+
+def _are_similar_concepts(name1: str, name2: str) -> bool:
+    """Check if two concept names are similar enough to be considered duplicates.
+    
+    Args:
+        name1: First concept name (normalized to lowercase)
+        name2: Second concept name (normalized to lowercase) 
+        
+    Returns:
+        True if concepts should be merged as duplicates.
+    """
+    # Handle exact matches
+    if name1 == name2:
+        return True
+    
+    # Handle plural/singular variations
+    if name1.endswith('s') and name1[:-1] == name2:
+        return True
+    if name2.endswith('s') and name2[:-1] == name1:
+        return True
+    
+    # Handle 'ing' variations
+    if name1.endswith('ing') and name1[:-3] == name2:
+        return True
+    if name2.endswith('ing') and name2[:-3] == name1:
+        return True
+    
+    # Handle common word variations
+    variations = [
+        ('method', 'methods', 'methodology'),
+        ('technique', 'techniques'),
+        ('algorithm', 'algorithms'),
+        ('approach', 'approaches'),
+        ('concept', 'concepts'),
+        ('principle', 'principles'),
+        ('theory', 'theories'),
+        ('model', 'models', 'modeling'),
+        ('analysis', 'analyses'),
+        ('network', 'networks', 'networking'),
+        ('learning', 'machine learning'),
+        ('data', 'dataset', 'datasets')
+    ]
+    
+    for variation_group in variations:
+        if name1 in variation_group and name2 in variation_group:
+            return True
+    
+    # Handle substring matches for compound concepts
+    words1 = set(name1.split())
+    words2 = set(name2.split())
+    
+    # If one concept is a subset of another with significant overlap
+    if len(words1) >= 2 and len(words2) >= 2:
+        intersection = words1.intersection(words2)
+        union = words1.union(words2)
+        
+        # Consider similar if they share >75% of words
+        similarity_ratio = len(intersection) / len(union)
+        if similarity_ratio > 0.75:
+            return True
+    
+    # Handle abbreviations and expansions
+    if len(name1) <= 5 and name1.upper() in name2.upper():
+        return True
+    if len(name2) <= 5 and name2.upper() in name1.upper():
+        return True
+    
+    return False
+
+
 def generate_learning_plan_from_minimal_subgraph(
     minimal_subgraph: Dict[str, Any], 
     sources: List[Dict[str, Any]], 
@@ -1871,25 +2060,14 @@ def generate_learning_plan_from_minimal_subgraph(
             'practical': []  # Insights and applications
         }
         
-        # Categorize concepts based on centrality and enhanced information
+        # Collect all concepts with their data before categorization
+        all_concepts = []
         for node_id, score in ordered_nodes:
             if node_id not in enhanced_concepts:
                 continue
                 
             enhanced_concept = enhanced_concepts[node_id]
             concept_type = enhanced_concept.get('type', 'concept')
-            
-            # Determine learning category based on centrality and concept complexity
-            if score > 0.7 or any(keyword in enhanced_concept['name'].lower() 
-                                  for keyword in ['fundamental', 'basic', 'introduction', 'overview']):
-                category = 'foundation'
-            elif score > 0.4 or concept_type == 'entity':
-                category = 'intermediate'  
-            elif concept_type == 'insight' or any(keyword in enhanced_concept['name'].lower() 
-                                                  for keyword in ['application', 'practice', 'implementation']):
-                category = 'practical'
-            else:
-                category = 'advanced'
             
             # Add time estimates based on depth and complexity
             time_estimate = calculate_enhanced_time_estimate(enhanced_concept, depth, score)
@@ -1922,10 +2100,36 @@ def generate_learning_plan_from_minimal_subgraph(
                 'importance_score': score,
                 'connections': get_concept_connections(node_id, G, enhanced_concepts),
                 'resources': enhanced_concept['resources'],
-                'source_references': unique_source_references[:5]  # Limit to top 5 references
+                'source_references': unique_source_references[:5],  # Limit to top 5 references
+                'node_id': node_id  # Keep for debugging
             }
             
-            concept_groups[category].append(concept_info)
+            all_concepts.append(concept_info)
+        
+        # Deduplicate concepts before categorization
+        deduplicated_concepts = deduplicate_learning_concepts(all_concepts)
+        print(f"🔄 Deduplication: {len(all_concepts)} → {len(deduplicated_concepts)} concepts")
+        
+        # Categorize deduplicated concepts based on centrality and enhanced information
+        for concept_info in deduplicated_concepts:
+            concept_type = concept_info.get('type', 'concept')
+            score = concept_info.get('importance_score', 0.0)
+            
+            # Determine learning category based on centrality and concept complexity
+            if score > 0.7 or any(keyword in concept_info['name'].lower() 
+                                  for keyword in ['fundamental', 'basic', 'introduction', 'overview']):
+                category = 'foundation'
+            elif score > 0.4 or concept_type == 'entity':
+                category = 'intermediate'  
+            elif concept_type == 'insight' or any(keyword in concept_info['name'].lower() 
+                                                  for keyword in ['application', 'practice', 'implementation']):
+                category = 'practical'
+            else:
+                category = 'advanced'
+            
+            # Remove node_id before adding to final result
+            final_concept = {k: v for k, v in concept_info.items() if k != 'node_id'}
+            concept_groups[category].append(final_concept)
         
         # Generate time estimates for each phase
         phase_times = {
@@ -1940,6 +2144,11 @@ def generate_learning_plan_from_minimal_subgraph(
         # Create source bibliography
         source_bibliography = create_source_bibliography(sources)
         
+        # Calculate deduplication statistics
+        original_concept_count = len(all_concepts)
+        deduplicated_concept_count = len(deduplicated_concepts)
+        concepts_removed_by_deduplication = original_concept_count - deduplicated_concept_count
+        
         # Generate structured learning plan
         learning_plan = {
             'topic': topic,
@@ -1952,12 +2161,16 @@ def generate_learning_plan_from_minimal_subgraph(
             'source_bibliography': source_bibliography,
             'source_connectivity_enabled': enable_source_filtering,
             'concepts_removed_by_source_filter': len(removed_concepts) if removed_concepts else 0,
+            'deduplication_enabled': True,
+            'concepts_removed_by_deduplication': concepts_removed_by_deduplication,
+            'original_concept_count': original_concept_count,
             'learning_path_rationale': (
                 f"Learning path designed using centrality analysis of {len(nodes)} key concepts. "
                 f"Concepts are ordered to ensure foundational understanding before advanced topics, "
-                f"with direct connections to {len(sources)} verified source materials."
-                + (f" Source connectivity filtering removed {len(removed_concepts)} unverified concepts." 
-                   if removed_concepts else " All concepts have verified source connections.")
+                f"with direct connections to {len(sources)} verified source materials. "
+                + (f"Source connectivity filtering removed {len(removed_concepts)} unverified concepts. " 
+                   if removed_concepts else "All concepts have verified source connections. ")
+                + f"Deduplication removed {concepts_removed_by_deduplication} duplicate concepts."
             )
         }
         
