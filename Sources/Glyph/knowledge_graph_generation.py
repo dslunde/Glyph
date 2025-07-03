@@ -1094,6 +1094,19 @@ def map_nodes_to_meaningful_concepts(
     for node_id, node in node_dict.items():
         node_label = node.get('label', '').lower()
         
+        # Extract source references from node dictionary or its nested properties
+        node_src_raw = node.get('source_references')
+        if not node_src_raw and isinstance(node.get('properties'), dict):
+            node_src_raw = node['properties'].get('source_references')
+        if isinstance(node_src_raw, list):
+            node_source_references = node_src_raw
+        else:
+            # Fallback: treat as string representation (handles PythonKit str objects)
+            try:
+                node_source_references = [ref.strip() for ref in str(node_src_raw).split(',') if ref.strip()]
+            except Exception:
+                node_source_references = []
+        
         # Find best matching concept from sources
         best_match = None
         best_score = 0.0
@@ -1131,7 +1144,7 @@ def map_nodes_to_meaningful_concepts(
                 'resources': generate_enhanced_resources(best_match, sources),
                 'source_references': [best_match['source_title']],
                 'context': best_match['context'],
-                'node_source_references': node.get('source_references', [])
+                'node_source_references': node_source_references
             }
         else:
             # Fall back to node label but enhance it
@@ -1141,9 +1154,9 @@ def map_nodes_to_meaningful_concepts(
                 'type': node.get('type', 'concept'),
                 'description': f"Key concept related to {enhanced_name}",
                 'resources': generate_basic_resources(enhanced_name),
-                'source_references': node.get('source_references', []),
+                'source_references': node_source_references,
                 'context': '',
-                'node_source_references': node.get('source_references', [])
+                'node_source_references': node_source_references
             }
     
     return enhanced_concepts
@@ -1392,11 +1405,11 @@ def generate_learning_plan_from_minimal_subgraph(
             
             # Combine source references from original analysis and node references
             combined_source_references = []
-            
+
             # Add original source references
             if enhanced_concept.get('source_references'):
                 combined_source_references.extend(enhanced_concept['source_references'])
-            
+
             # Add node source references
             if enhanced_concept.get('node_source_references'):
                 combined_source_references.extend(enhanced_concept['node_source_references'])
