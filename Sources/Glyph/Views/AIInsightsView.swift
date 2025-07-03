@@ -364,14 +364,16 @@ struct AnalysisView: View {
 // MARK: - Analysis Welcome View
 
 struct AnalysisWelcomeView: View {
+    @Environment(\.colorScheme) private var colorScheme
     let onGenerate: () -> Void
     
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 64))
-                    .foregroundColor(.blue)
+                                        Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 64, height: 64)
                 
                 Text("Advanced Knowledge Analysis")
                     .font(.title)

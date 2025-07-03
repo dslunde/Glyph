@@ -3,6 +3,7 @@ import SwiftUI
 struct LearningPlanView: View {
     @EnvironmentObject private var projectManager: ProjectManager
     @StateObject private var pythonService = PythonGraphService()
+    @Environment(\.colorScheme) private var colorScheme
     @State private var learningPlanData: [String: Any]?
     @State private var isGenerating = false
     @State private var selectedPhase: String?
@@ -110,9 +111,10 @@ struct LearningPlanView: View {
             } else {
                 // Empty state - show default or prompt to generate
                 VStack(spacing: 20) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
+                                            Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 48, height: 48)
                     
                     Text("Learning Plan")
                         .font(.title2)

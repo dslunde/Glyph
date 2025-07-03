@@ -3,6 +3,7 @@ import SwiftUI
 /// Progress view for knowledge graph generation
 struct KnowledgeGraphProgressView: View {
     @StateObject private var pythonService = PythonGraphService()
+    @Environment(\.colorScheme) private var colorScheme
     @State private var progress: Double = 0.0
     @State private var currentMessage: String = "Initializing..."
     @State private var isCompleted: Bool = false
@@ -19,10 +20,10 @@ struct KnowledgeGraphProgressView: View {
         VStack(spacing: 24) {
             // Header
             VStack(spacing: 8) {
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 48))
-                    .foregroundColor(.blue)
-                    .symbolEffect(.pulse, options: .repeat(.continuous))
+                Image(colorScheme == .dark ? "icon_dark" : "icon_light", bundle: .module)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 48, height: 48)
                 
                 Text("Building Knowledge Graph")
                     .font(.title)

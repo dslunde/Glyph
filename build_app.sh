@@ -222,7 +222,7 @@ echo "✅ Python $PYTHON_VERSION embedded successfully!"
 
 # Copy app icon
 echo "🎨 Copying app icon..."
-cp -r "Sources/Glyph/Resources/AppIcon.appiconset" "$APP_DIR/Contents/Resources/"
+cp -r "Sources/Glyph/Resources/AppIcon.iconset" "$APP_DIR/Contents/Resources/"
 
 # Use Apple-compliant dark mode icon from Resources folder
 echo "🔧 Setting up optimized icon..."
@@ -239,10 +239,10 @@ elif [ -f "$RESOURCES_ICONS/AppIcon.icns" ]; then
     cp "$RESOURCES_ICONS/AppIcon.icns" "$APP_DIR/Contents/Resources/AppIcon.icns"
 elif command -v iconutil >/dev/null 2>&1; then
     echo "🔧 Converting iconset to .icns format..."
-    iconutil -c icns "$APP_DIR/Contents/Resources/AppIcon.appiconset" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
-    rm -rf "$APP_DIR/Contents/Resources/AppIcon.appiconset"
+    iconutil -c icns "$APP_DIR/Contents/Resources/AppIcon.iconset" -o "$APP_DIR/Contents/Resources/AppIcon.icns"
+    rm -rf "$APP_DIR/Contents/Resources/AppIcon.iconset"
 else
-    echo "⚠️  iconutil not found, keeping .appiconset format"
+    echo "⚠️  iconutil not found, keeping .iconset format"
 fi
 
 # Set file permissions
