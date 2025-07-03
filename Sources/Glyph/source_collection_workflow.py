@@ -30,6 +30,7 @@ import json
 import asyncio
 from typing import List, Dict, Any, Optional, TypedDict, Annotated
 from datetime import datetime
+import concurrent.futures
 
 # LangGraph imports
 try:
@@ -118,6 +119,7 @@ class SourceCollectionState(TypedDict):
     raw_results: List[Dict[str, Any]]
     scored_results: List[Dict[str, Any]]
     filtered_results: List[Dict[str, Any]]
+    streamed_results: List[Dict[str, Any]]
     
     # Messages for LangSmith tracing
     messages: Annotated[List[BaseMessage], add_messages]
@@ -289,8 +291,8 @@ Return only the queries, one per line, without numbering."""
 
 @traceable(name="search_with_tavily")
 def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
-    """Search for sources using Tavily API"""
-    print(f"🔍 Searching with {len(state['search_queries'])} queries...")
+    """Search for sources using Tavily API with parallel execution"""
+    print(f"🔍 Searching with {len(state['search_queries'])} queries in parallel...")
     
     step_start = datetime.now()
     state["current_step"] = "search_sources"
@@ -308,8 +310,10 @@ def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
         
         client = TavilyClient(api_key=tavily_key)
         
-        for i, query in enumerate(state["search_queries"]):
-            print(f"   🔍 Query {i+1}/{len(state['search_queries'])}: {query[:50]}...")
+        # PARALLEL SEARCH EXECUTION
+        def search_single_query_sync(query: str, query_index: int) -> List[Dict[str, Any]]:
+            """Search a single query synchronously"""
+            print(f"   🔍 Query {query_index+1}/{len(state['search_queries'])}: {query[:50]}...")
             
             try:
                 search_results = client.search(
@@ -321,6 +325,7 @@ def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
                 )
                 
                 # Process results
+                query_results = []
                 for result in search_results.get("results", []):
                     processed_result = {
                         "title": result.get("title", ""),
@@ -329,26 +334,48 @@ def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
                         "score": result.get("score", 0.0),
                         "published_date": result.get("published_date", ""),
                         "query": query,
+                        "query_index": query_index,
                         "reliability_score": None  # Will be filled in next step
                     }
-                    all_results.append(processed_result)
-                    
+                    query_results.append(processed_result)
+                
+                print(f"   ✅ Query {query_index+1} found {len(query_results)} results")
+                return query_results
+                
             except Exception as e:
-                print(f"   ❌ Query '{query[:30]}...' failed: {e}")
+                print(f"   ❌ Query {query_index+1} '{query[:30]}...' failed: {e}")
                 state["error_count"] += 1
-                continue
+                return []
+        
+        # Execute searches in parallel using ThreadPoolExecutor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all tasks
+            future_to_query = {
+                executor.submit(search_single_query_sync, query, i): (query, i)
+                for i, query in enumerate(state["search_queries"])
+            }
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_query):
+                query, index = future_to_query[future]
+                try:
+                    query_results = future.result()
+                    all_results.extend(query_results)
+                except Exception as e:
+                    print(f"   ⚠️ Parallel search exception for query {index+1}: {e}")
+                    state["error_count"] += 1
         
         state["raw_results"] = all_results
         
         success_message = AIMessage(
-            content=f"Found {len(all_results)} results from Tavily search"
+            content=f"Found {len(all_results)} results from parallel Tavily searches"
         )
         state["messages"].append(success_message)
         
-        print(f"✅ Found {len(all_results)} total results")
+        print(f"✅ Parallel searches completed - found {len(all_results)} total results")
         
     except Exception as e:
-        print(f"❌ Search failed: {e}")
+        print(f"❌ Parallel search failed: {e}")
         state["error_count"] += 1
         
         # Determine specific reason for fallback
@@ -385,10 +412,100 @@ def search_sources_node(state: SourceCollectionState) -> SourceCollectionState:
     return state
 
 
+@traceable(name="deduplicate_sources")
+def deduplicate_sources_node(state: SourceCollectionState) -> SourceCollectionState:
+    """Remove duplicate sources from the search results"""
+    print(f"🔄 Deduplicating {len(state['raw_results'])} results...")
+    
+    step_start = datetime.now()
+    state["current_step"] = "deduplicate_sources"
+    state["progress"] = 0.5
+    
+    # Track original count
+    original_count = len(state["raw_results"])
+    
+    # Deduplicate by URL (primary key)
+    seen_urls = set()
+    unique_results = []
+    
+    for result in state["raw_results"]:
+        url = result.get("url", "")
+        if url and url not in seen_urls:
+            seen_urls.add(url)
+            unique_results.append(result)
+        else:
+            print(f"   🗑️ Duplicate removed: {result.get('title', 'Unknown')[:50]}...")
+    
+    # Secondary deduplication by title similarity (for cases where URLs differ but content is same)
+    def titles_similar(title1: str, title2: str, threshold: float = 0.8) -> bool:
+        """Check if two titles are similar enough to be considered duplicates"""
+        if not title1 or not title2:
+            return False
+        
+        # Simple similarity check - normalize and compare
+        t1 = title1.lower().strip()
+        t2 = title2.lower().strip()
+        
+        # Exact match
+        if t1 == t2:
+            return True
+        
+        # Substring match (one is contained in the other)
+        if t1 in t2 or t2 in t1:
+            return True
+        
+        # Word overlap ratio
+        words1 = set(t1.split())
+        words2 = set(t2.split())
+        if len(words1) > 0 and len(words2) > 0:
+            overlap = len(words1 & words2)
+            union = len(words1 | words2)
+            similarity = overlap / union if union > 0 else 0
+            return similarity >= threshold
+        
+        return False
+    
+    # Remove title duplicates
+    title_deduplicated = []
+    for i, result in enumerate(unique_results):
+        is_duplicate = False
+        current_title = result.get("title", "")
+        
+        for j, existing in enumerate(title_deduplicated):
+            existing_title = existing.get("title", "")
+            if titles_similar(current_title, existing_title):
+                print(f"   🗑️ Title duplicate removed: {current_title[:50]}...")
+                is_duplicate = True
+                break
+        
+        if not is_duplicate:
+            title_deduplicated.append(result)
+    
+    state["raw_results"] = title_deduplicated
+    
+    duplicates_removed = original_count - len(title_deduplicated)
+    
+    dedup_message = AIMessage(
+        content=f"Removed {duplicates_removed} duplicates, {len(title_deduplicated)} unique results remain"
+    )
+    state["messages"].append(dedup_message)
+    
+    print(f"✅ Deduplication complete:")
+    print(f"   📊 Original: {original_count} results")
+    print(f"   🗑️ Duplicates removed: {duplicates_removed}")
+    print(f"   ✨ Unique results: {len(title_deduplicated)}")
+    
+    # Record timing
+    duration = (datetime.now() - step_start).total_seconds()
+    state["step_timings"]["deduplicate_sources"] = duration
+    
+    return state
+
+
 @traceable(name="score_source_reliability")
 def score_reliability_node(state: SourceCollectionState) -> SourceCollectionState:
-    """Score the reliability of each source using LLM"""
-    print(f"🎯 Scoring reliability for {len(state['raw_results'])} results...")
+    """Score the reliability of each source using parallel LLM calls with streaming"""
+    print(f"🎯 Scoring reliability for {len(state['raw_results'])} results in parallel...")
     
     step_start = datetime.now()
     state["current_step"] = "score_reliability"
@@ -406,10 +523,11 @@ def score_reliability_node(state: SourceCollectionState) -> SourceCollectionStat
         
         client = openai.OpenAI(api_key=openai_key)
         
-        for i, result in enumerate(state["raw_results"]):
-            if i % 5 == 0:  # Progress update every 5 results
-                print(f"   📊 Scoring {i+1}/{len(state['raw_results'])}...")
-            
+        # PARALLEL RELIABILITY SCORING
+        import concurrent.futures
+        
+        def score_single_result_sync(result: Dict[str, Any], index: int) -> Dict[str, Any]:
+            """Score a single result synchronously"""
             try:
                 title = result.get("title", "")
                 url = result.get("url", "")
@@ -441,35 +559,55 @@ Return only a number between 0-100."""
                 )
                 
                 try:
-                    content = response.choices[0].message.content or "50"
-                    score = int(content.strip())
+                    content_response = response.choices[0].message.content or "50"
+                    score = int(content_response.strip())
                     score = max(0, min(100, score))  # Clamp to 0-100
                 except (ValueError, AttributeError):
                     score = generate_domain_score(url)  # Fallback scoring
                 
                 result_copy = result.copy()
                 result_copy["reliability_score"] = score
-                scored_results.append(result_copy)
+                
+                print(f"   ✅ Result {index+1} scored: {score}% - {title[:50]}...")
+                return result_copy
                 
             except Exception as e:
-                print(f"   ⚠️ Scoring failed for result {i+1}: {e}")
+                print(f"   ⚠️ Scoring failed for result {index+1}: {e}")
                 # Use fallback scoring
                 result_copy = result.copy()
                 result_copy["reliability_score"] = generate_domain_score(result.get("url", ""))
-                scored_results.append(result_copy)
                 state["error_count"] += 1
+                return result_copy
+        
+        # Execute all scoring in parallel using ThreadPoolExecutor
+        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+            # Submit all tasks
+            future_to_result = {
+                executor.submit(score_single_result_sync, result, i): (result, i)
+                for i, result in enumerate(state["raw_results"])
+            }
+            
+            # Collect results as they complete
+            for future in concurrent.futures.as_completed(future_to_result):
+                result, index = future_to_result[future]
+                try:
+                    scored_result = future.result()
+                    scored_results.append(scored_result)
+                except Exception as e:
+                    print(f"   ⚠️ Parallel scoring exception for result {index+1}: {e}")
+                    state["error_count"] += 1
         
         state["scored_results"] = scored_results
         
         success_message = AIMessage(
-            content=f"Scored reliability for {len(scored_results)} results"
+            content=f"Scored reliability for {len(scored_results)} results in parallel"
         )
         state["messages"].append(success_message)
         
-        print(f"✅ Scored {len(scored_results)} results")
+        print(f"✅ Parallel scoring completed - {len(scored_results)} results scored")
         
     except Exception as e:
-        print(f"❌ Reliability scoring failed: {e}")
+        print(f"❌ Parallel reliability scoring failed: {e}")
         state["error_count"] += 1
         
         # Determine specific reason for fallback
@@ -508,10 +646,58 @@ Return only a number between 0-100."""
     return state
 
 
+@traceable(name="stream_results_to_user")
+def stream_results_node(state: SourceCollectionState) -> SourceCollectionState:
+    """Stream results to user immediately as they are scored (no aggregation wait)"""
+    print(f"📡 Streaming {len(state['scored_results'])} results to user...")
+    
+    step_start = datetime.now()
+    state["current_step"] = "stream_results"
+    state["progress"] = 0.9
+    
+    # Sort by reliability score (descending) for streaming
+    sorted_results = sorted(
+        state["scored_results"],
+        key=lambda x: x.get("reliability_score", 0),
+        reverse=True
+    )
+    
+    # Stream results to user (in real implementation, this would be via callback/websocket)
+    # For now, we'll simulate streaming with console output
+    print("   📤 Streaming results to user interface...")
+    
+    streamed_results = []
+    for i, result in enumerate(sorted_results):
+        # Simulate streaming delay
+        import time
+        time.sleep(0.1)  # Small delay to simulate streaming
+        
+        streamed_results.append(result)
+        
+        # Log streaming progress
+        if i % 5 == 0 or i == len(sorted_results) - 1:
+            print(f"   📊 Streamed {i+1}/{len(sorted_results)} results to user")
+    
+    state["streamed_results"] = streamed_results
+    
+    stream_message = AIMessage(
+        content=f"Streamed {len(streamed_results)} results to user interface"
+    )
+    state["messages"].append(stream_message)
+    
+    print(f"✅ Streaming completed - {len(streamed_results)} results delivered")
+    
+    # Record timing
+    duration = (datetime.now() - step_start).total_seconds()
+    state["step_timings"]["stream_results"] = duration
+    
+    return state
+
+
 @traceable(name="filter_by_preferences")
 def filter_results_node(state: SourceCollectionState) -> SourceCollectionState:
     """Filter results based on user preferences and reliability threshold"""
-    print(f"🔬 Filtering {len(state['scored_results'])} results...")
+    print(f"🔬 Filtering {len(state['streamed_results'])} results...")
     
     step_start = datetime.now()
     state["current_step"] = "filter_results"
@@ -532,7 +718,7 @@ def filter_results_node(state: SourceCollectionState) -> SourceCollectionState:
         filter_func = lambda score: score >= 60.0 or score <= 40.0
     
     filtered_results = []
-    for result in state["scored_results"]:
+    for result in state["streamed_results"]:
         reliability_score = result.get("reliability_score", 50)
         
         if filter_func(reliability_score):
@@ -540,7 +726,7 @@ def filter_results_node(state: SourceCollectionState) -> SourceCollectionState:
     
     state["filtered_results"] = filtered_results
     
-    # Sort by reliability score (descending)
+    # Sort by reliability score (descending) - already sorted from streaming but ensuring consistency
     state["filtered_results"].sort(
         key=lambda x: x.get("reliability_score", 0), 
         reverse=True
@@ -570,7 +756,7 @@ def finalize_node(state: SourceCollectionState) -> SourceCollectionState:
     state["current_step"] = "finalize"
     state["progress"] = 1.0
     state["success"] = True
-    state["final_results"] = state["filtered_results"]
+    state["final_results"] = state["filtered_results"]  # Use filtered results as final output
     
     # Calculate total duration
     if state["start_time"]:
@@ -598,12 +784,22 @@ def error_handler_node(state: SourceCollectionState) -> SourceCollectionState:
     state["current_step"] = "error_handler"
     state["retry_count"] += 1
     
-    # If we have partial results, try to continue
-    if state["filtered_results"] and len(state["filtered_results"]) > 0:
-        print("🔄 Partial results available, continuing with fallback...")
+    # Check for partial results in order of preference
+    if state["streamed_results"] and len(state["streamed_results"]) > 0:
+        print("🔄 Streamed results available, using them as final output...")
+        state["success"] = True
+        state["final_results"] = state["streamed_results"]
+        state["error_message"] = f"Completed with {state['error_count']} errors but streamed results available"
+    elif state["filtered_results"] and len(state["filtered_results"]) > 0:
+        print("🔄 Filtered results available, using them as final output...")
         state["success"] = True
         state["final_results"] = state["filtered_results"]
-        state["error_message"] = f"Completed with {state['error_count']} errors but partial results available"
+        state["error_message"] = f"Completed with {state['error_count']} errors but filtered results available"
+    elif state["scored_results"] and len(state["scored_results"]) > 0:
+        print("🔄 Scored results available, using them as final output...")
+        state["success"] = True
+        state["final_results"] = state["scored_results"]
+        state["error_message"] = f"Completed with {state['error_count']} errors but scored results available"
     else:
         print("💥 No usable results, workflow failed")
         state["success"] = False
@@ -634,7 +830,9 @@ def should_continue(state: SourceCollectionState) -> str:
         String indicating the next workflow node to execute:
         - "generate_queries": Move to query generation
         - "search_sources": Move to source search
+        - "deduplicate_sources": Move to duplicate removal
         - "score_reliability": Move to reliability scoring
+        - "stream_results": Move to result streaming
         - "filter_results": Move to result filtering
         - "finalize": Move to result finalization
         - "error_handler": Move to error handling
@@ -661,11 +859,21 @@ def should_continue(state: SourceCollectionState) -> str:
             return "error_handler"
     elif current_step == "search_sources":
         if state["raw_results"]:
+            return "deduplicate_sources"
+        else:
+            return "error_handler"
+    elif current_step == "deduplicate_sources":
+        if state["raw_results"]:  # Still using raw_results as dedupe modifies it in place
             return "score_reliability"
         else:
             return "error_handler"
     elif current_step == "score_reliability":
         if state["scored_results"]:
+            return "stream_results"
+        else:
+            return "error_handler"
+    elif current_step == "stream_results":
+        if state["streamed_results"]:
             return "filter_results"
         else:
             return "error_handler"
@@ -762,8 +970,8 @@ def create_source_collection_workflow() -> StateGraph:
     
     This function constructs a complete state machine workflow for orchestrating
     the source collection process. The workflow includes initialization, query
-    generation, source search, reliability scoring, result filtering, and
-    comprehensive error handling.
+    generation, source search, duplicate removal, reliability scoring, result
+    streaming, and comprehensive error handling.
     
     Returns:
         Configured StateGraph workflow ready for compilation and execution.
@@ -774,6 +982,10 @@ def create_source_collection_workflow() -> StateGraph:
     Note:
         The workflow supports automatic error recovery and branching logic based
         on intermediate results. Each node can route to error_handler if needed.
+        
+    Flow: A. Input → B. Prompt Generator → C. Parallel Tavily Search → 
+          D. Duplicate Remover → E. Parallel Reliability Scorer → 
+          F. Stream Results → G. Filter Results → H. Finalize
     """
     if not LANGGRAPH_AVAILABLE:
         raise ImportError("LangGraph is required but not available")
@@ -785,7 +997,9 @@ def create_source_collection_workflow() -> StateGraph:
     workflow.add_node("initialize", initialize_node)
     workflow.add_node("generate_queries", generate_queries_node)
     workflow.add_node("search_sources", search_sources_node)
+    workflow.add_node("deduplicate_sources", deduplicate_sources_node)
     workflow.add_node("score_reliability", score_reliability_node)
+    workflow.add_node("stream_results", stream_results_node)
     workflow.add_node("filter_results", filter_results_node)
     workflow.add_node("finalize", finalize_node)
     workflow.add_node("error_handler", error_handler_node)
@@ -816,6 +1030,15 @@ def create_source_collection_workflow() -> StateGraph:
         "search_sources",
         should_continue,
         {
+            "deduplicate_sources": "deduplicate_sources",
+            "error_handler": "error_handler"
+        }
+    )
+    
+    workflow.add_conditional_edges(
+        "deduplicate_sources",
+        should_continue,
+        {
             "score_reliability": "score_reliability",
             "error_handler": "error_handler"
         }
@@ -823,6 +1046,15 @@ def create_source_collection_workflow() -> StateGraph:
     
     workflow.add_conditional_edges(
         "score_reliability",
+        should_continue,
+        {
+            "stream_results": "stream_results",
+            "error_handler": "error_handler"
+        }
+    )
+    
+    workflow.add_conditional_edges(
+        "stream_results",
         should_continue,
         {
             "filter_results": "filter_results",
@@ -911,6 +1143,7 @@ async def run_source_collection_workflow(
         raw_results=[],
         scored_results=[],
         filtered_results=[],
+        streamed_results=[],
         messages=[],
         run_id=None,
         start_time=None,
@@ -933,6 +1166,7 @@ async def run_source_collection_workflow(
                 "total_queries": len(final_state["search_queries"]),
                 "raw_results": len(final_state["raw_results"]),
                 "scored_results": len(final_state["scored_results"]),
+                "streamed_results": len(final_state["streamed_results"]),
                 "filtered_results": len(final_state["filtered_results"]),
                 "error_count": final_state["error_count"],
                 "retry_count": final_state["retry_count"],

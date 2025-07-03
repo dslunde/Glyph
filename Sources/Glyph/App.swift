@@ -1075,6 +1075,14 @@ struct SourceCollectionView: View {
             // Process workflow results
             if workflowResult["success"] as? Bool == true {
                 if let results = workflowResult["results"] as? [[String: Any]] {
+                    // DEBUG: Print the first result to see what we're getting from Python
+                    if let firstResult = results.first {
+                        print("🔍 DEBUG: First result from Python workflow:")
+                        for (key, value) in firstResult {
+                            print("   🔑 \(key): \(value) (type: \(type(of: value)))")
+                        }
+                    }
+                    
                     let filteredResults = results.compactMap { resultDict -> TavilyResult? in
                         guard let title = resultDict["title"] as? String,
                               let url = resultDict["url"] as? String,
@@ -1089,7 +1097,19 @@ struct SourceCollectionView: View {
                             score: resultDict["score"] as? Double ?? 0.0,
                             publishedDate: resultDict["published_date"] as? String ?? ""
                         )
-                        result.reliabilityScore = resultDict["reliability_score"] as? Double ?? 50.0
+                        
+                        // Handle reliability_score as either Int or Double
+                        let reliabilityScore: Double
+                        if let intScore = resultDict["reliability_score"] as? Int {
+                            reliabilityScore = Double(intScore)
+                        } else if let doubleScore = resultDict["reliability_score"] as? Double {
+                            reliabilityScore = doubleScore
+                        } else {
+                            reliabilityScore = 50.0
+                        }
+                        
+                        result.reliabilityScore = reliabilityScore
+                        
                         return result
                     }
                     
@@ -1200,6 +1220,9 @@ struct SourceCollectionView: View {
     private func streamResults(_ results: [TavilyResult]) async {
         // Convert to SearchResult and stream them
         for result in results {
+            // DEBUG: Check reliability score before conversion
+            print("🔍 DEBUG: Streaming result '\(result.title)' - TavilyResult.reliabilityScore: \(result.reliabilityScore)")
+            
             let searchResult = SearchResult(
                 title: result.title,
                 author: extractAuthor(from: result.content),
@@ -1209,6 +1232,9 @@ struct SourceCollectionView: View {
                 content: result.content,
                 status: .pending
             )
+            
+            // DEBUG: Check reliability score after conversion
+            print("🔍 DEBUG: Created SearchResult '\(searchResult.title)' - reliabilityScore: \(searchResult.reliabilityScore)")
             
             await MainActor.run {
                 searchResults.append(searchResult)
