@@ -1,6 +1,6 @@
 # Active Context
 
-## 🎯 **CURRENT STATUS: SOURCE TRACEABILITY & ENHANCED LEARNING PLAN DETAILS - COMPLETED ✅**
+## 🎯 **CURRENT STATUS: SOURCE TRACEABILITY – PARTIALLY COMPLETE, FINAL INTEGRATION PENDING 🚧**
 
 ### **🏆 MAJOR FEATURE ACHIEVEMENT: Complete Source-to-Output Traceability**
 
@@ -44,6 +44,19 @@
 - ✅ **Related Concepts**: Displays connections to other concepts in the knowledge graph
 - ✅ **Learning Resources**: Provides tailored learning materials for each concept
 - ✅ **Time Estimates**: Shows estimated learning time for each concept
+
+### **🔄 WORK IN PROGRESS: End-to-End Source-Reference Linking**
+
+We have implemented Python and Swift fixes so that:
+1. Nodes carry clean `source_references` lists.
+2. `convertPythonToSwift` now passes pure-string lists as `[String]`.
+
+But learning-plan concepts still show empty arrays, so final verification/refinement is needed to ensure references propagate into each concept card.
+
+### **🗒️ Immediate Next Steps**
+1. Debug `map_nodes_to_meaningful_concepts` merge logic to confirm non-empty refs.
+2. Verify Swift receives populated `[String]` arrays in `learningPlanData`.
+3. Update UI if additional parsing required.
 
 ### **📋 Next Priority Items**
 
@@ -135,16 +148,4 @@ With source references now working:
 ## Recent Developments
 
 - **Source Traceability**: Core issue resolved - real content now flows through the pipeline
-- **UI Components**: Both `NodeDetailView` and `ConceptDetailCard` correctly implemented for source display
-- **Python Backend**: NLP processing working correctly, was just missing meaningful input data
-
-## Key Files Modified
-
-- `Sources/Glyph/App.swift`: Fixed source content handling in `createProjectWithSources()`
-- Added debug logging to track content flow through the pipeline
-
-## Technical Notes
-
-- The UI was always correctly implemented - issue was data pipeline
-- Python knowledge graph generation expects meaningful content for concept extraction
-- Source references flow: Search API → Swift → Python NLP → Graph nodes → UI display
+- **UI Components**: Both `NodeDetailView` and `
