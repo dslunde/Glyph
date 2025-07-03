@@ -425,7 +425,7 @@ class PythonGraphService: ObservableObject {
                 print("✅ Knowledge graph generation completed successfully")
                 print("   📊 Nodes: \(swiftNodes.count)")
                 print("   🔗 Edges: \(swiftEdges.count)")
-                print("   🎯 Minimal nodes: \(swiftMinimalSubgraph["nodes"] as? [[String: Any]] ?? [])")
+                // // print("   🎯 Minimal nodes: \(swiftMinimalSubgraph["nodes"] as? [[String: Any]] ?? [])")
                 
                 return [
                     "success": true,

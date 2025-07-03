@@ -944,7 +944,7 @@ struct SourceCollectionView: View {
                     maxPages: 10
                 )
                 
-                print("🔍 DEBUG: Enhanced processing returned: \(enhancedResult)")
+                // // print("🔍 DEBUG: Enhanced processing returned: \(enhancedResult)")
                 
                 // Extract enhanced sources
                 if let sources = enhancedResult["sources"] as? [[String: Any]] {
