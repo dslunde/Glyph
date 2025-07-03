@@ -1,5 +1,7 @@
 import SwiftUI
 import AppKit
+import PythonKit
+import os.log
 
 @main
 struct GlyphApp: App {
@@ -701,6 +703,7 @@ struct SourceCollectionView: View {
     let projectConfig: ProjectConfiguration
     
     @State private var manualSources: [ManualSource] = []
+    @State private var enhancedManualSources: [[String: Any]] = []
     @State private var searchResults: [SearchResult] = []
     @State private var isSearching = false
     @State private var canContinue = false
@@ -876,6 +879,11 @@ struct SourceCollectionView: View {
     // MARK: - Helper Methods
     
     private func setupManualSources() {
+        print("🔍 DEBUG: setupManualSources() called")
+        print("🔍 DEBUG: projectConfig.filePaths = \(projectConfig.filePaths)")
+        print("🔍 DEBUG: projectConfig.urls = \(projectConfig.urls)")
+        print("🔍 DEBUG: projectManager.isOnlineMode = \(projectManager.isOnlineMode)")
+        
         manualSources.removeAll()
         
         // Add file paths
@@ -886,6 +894,7 @@ struct SourceCollectionView: View {
                 status: .validating
             )
             manualSources.append(source)
+            print("🔍 DEBUG: Added file source: \(filePath)")
         }
         
         // Add URLs
@@ -896,11 +905,94 @@ struct SourceCollectionView: View {
                 status: projectManager.isOnlineMode ? .validating : .invalid
             )
             manualSources.append(source)
+            print("🔍 DEBUG: Added URL source: \(url), status: \(source.status)")
         }
         
-        // Start validation
+        print("🔍 DEBUG: Total manual sources added: \(manualSources.count)")
+        
+        // Start enhanced processing and validation
         Task {
-            await validateManualSources()
+            print("🔍 DEBUG: Starting processManualSourcesWithEnhancement task")
+            await processManualSourcesWithEnhancement()
+        }
+    }
+    
+    private func processManualSourcesWithEnhancement() async {
+        print("🔍 DEBUG: processManualSourcesWithEnhancement() called")
+        
+        // First do basic validation
+        await validateManualSources()
+        
+        // Then run enhanced processing if we have valid sources
+        let validFilePaths = projectConfig.filePaths.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        let validUrls = projectConfig.urls.filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        
+        print("🔍 DEBUG: validFilePaths = \(validFilePaths.count), validUrls = \(validUrls.count)")
+        
+        if !validFilePaths.isEmpty || !validUrls.isEmpty {
+            do {
+                print("🚀 Running enhanced source processing...")
+                print("🔍 DEBUG: About to call processManualSources with:")
+                print("   - filePaths: \(validFilePaths)")
+                print("   - urls: \(validUrls)")
+                print("   - topic: \(projectConfig.topic)")
+                
+                let enhancedResult = try await projectManager.pythonService.processManualSources(
+                    filePaths: validFilePaths,
+                    urls: validUrls,
+                    topic: projectConfig.topic,
+                    maxPages: 10
+                )
+                
+                // // print("🔍 DEBUG: Enhanced processing returned: \(enhancedResult)")
+                
+                // Extract enhanced sources
+                if let sources = enhancedResult["sources"] as? [[String: Any]] {
+                    await MainActor.run {
+                        // Store enhanced sources for knowledge graph generation
+                        enhancedManualSources = sources
+                        print("✅ Enhanced processing complete: \(sources.count) total sources")
+                        print("🔍 DEBUG: Stored \(enhancedManualSources.count) enhanced sources")
+                        
+                        // Update UI to show enhancement results
+                        if let metadata = enhancedResult["metadata"] as? [String: Any] {
+                            let filesProcessed = metadata["files_processed"] as? Int ?? 0
+                            let urlsExpanded = metadata["total_discovered_pages"] as? Int ?? 0
+                            
+                            print("🔍 DEBUG: Metadata - files: \(filesProcessed), urls: \(urlsExpanded)")
+                            
+                            // Update manual source status to show enhancement
+                            for index in manualSources.indices {
+                                if manualSources[index].status == .valid {
+                                    if manualSources[index].type == .file && filesProcessed > 0 {
+                                        manualSources[index].enhancementInfo = "Content extracted"
+                                    } else if manualSources[index].type == .url && urlsExpanded > 0 {
+                                        manualSources[index].enhancementInfo = "Expanded to \(urlsExpanded) pages"
+                                    }
+                                }
+                            }
+                        }
+                        
+                        updateContinueState()
+                    }
+                } else {
+                    print("❌ DEBUG: No sources found in enhanced result")
+                    await MainActor.run {
+                        enhancedManualSources = []
+                        updateContinueState()
+                    }
+                }
+                
+            } catch {
+                print("❌ Enhanced source processing failed: \(error)")
+                await MainActor.run {
+                    // Fall back to basic manual sources
+                    enhancedManualSources = []
+                    updateContinueState()
+                }
+            }
+        } else {
+            print("🔍 DEBUG: No valid sources to process")
         }
     }
     
@@ -1114,6 +1206,7 @@ struct SourceCollectionView: View {
                 date: formatDate(result.publishedDate),
                 reliabilityScore: Int(result.reliabilityScore),
                 url: result.url,
+                content: result.content,
                 status: .pending
             )
             
@@ -1176,15 +1269,70 @@ struct SourceCollectionView: View {
     }
     
     private func createProjectWithSources() {
+        print("🚨🚨🚨 DEBUG: createProjectWithSources() called - THIS SHOULD BE VISIBLE! 🚨🚨🚨")
+        print("🔍 DEBUG: createProjectWithSources() called")
+        
         // Collect approved sources
         let approvedSources = searchResults.filter { $0.status == .approved }
         let validManualSources = manualSources.filter { $0.status == .valid }
         
+        print("🔍 DEBUG: approvedSources = \(approvedSources.count), validManualSources = \(validManualSources.count)")
+        
+        // Log content preview for debugging
+        for (index, source) in approvedSources.enumerated() {
+            let contentPreview = String(source.content.prefix(100))
+            print("🔍 DEBUG: Source \(index + 1) content preview: \(contentPreview)...")
+        }
+        
+        // Convert SearchResults to the format expected by knowledge graph generation
+        let sourcesForKG = approvedSources.map { searchResult in
+            [
+                "title": searchResult.title,
+                "content": searchResult.content,  // Use actual content from search results
+                "url": searchResult.url,
+                "score": Double(searchResult.reliabilityScore) / 100.0,
+                "published_date": searchResult.date,
+                "query": projectConfig.topic,
+                "reliability_score": searchResult.reliabilityScore
+            ] as [String: Any]
+        }
+        
+        // Use enhanced manual sources if available, otherwise fall back to basic sources
+        let manualSourcesForKG: [[String: Any]]
+        if !enhancedManualSources.isEmpty {
+            print("🚀 Using enhanced manual sources for knowledge graph: \(enhancedManualSources.count) sources")
+            manualSourcesForKG = enhancedManualSources
+        } else {
+            print("🔄 Using basic manual sources for knowledge graph: \(validManualSources.count) sources")
+            manualSourcesForKG = validManualSources.map { manualSource in
+                [
+                    "title": manualSource.type == .file ? "File Source" : "URL Source", 
+                    "content": "Manual source: \(manualSource.path). This is a user-provided \(manualSource.type == .file ? "file" : "URL") source that contains relevant information about \(projectConfig.topic).",
+                    "url": manualSource.path,
+                    "score": 0.8,
+                    "published_date": "",
+                    "query": projectConfig.topic,
+                    "reliability_score": 80
+                ] as [String: Any]
+            }
+        }
+        
+        let allSources = sourcesForKG + manualSourcesForKG
+        
+        // Log source content size for debugging
+        print("🔍 DEBUG: Total sources for KG: \(allSources.count)")
+        for (index, source) in allSources.enumerated() {
+            let contentSize = (source["content"] as? String)?.count ?? 0
+            print("🔍 DEBUG: Source \(index + 1) content size: \(contentSize) characters")
+        }
+        
         // Create learning plan with approved sources instead of Lorem Ipsum
         let learningPlan = generateLearningPlanWithSources(approvedSources: approvedSources, manualSources: validManualSources)
         
+        print("🔍 DEBUG: About to create project with custom learning plan and \(allSources.count) sources")
+        
         // Create the project
-        projectManager.createProjectWithCustomLearningPlan(
+        projectManager.createProjectWithCustomLearningPlanAndSources(
             name: projectConfig.name,
             description: projectConfig.description,
             topic: projectConfig.topic,
@@ -1195,44 +1343,25 @@ struct SourceCollectionView: View {
             hypotheses: projectConfig.hypotheses,
             controversialAspects: projectConfig.controversialAspects,
             sensitivityLevel: projectConfig.sensitivityLevel,
-            learningPlan: learningPlan
+            learningPlan: learningPlan,
+            sources: allSources
         )
         
-        // Start knowledge graph generation if we have approved sources
-        if !approvedSources.isEmpty {
-            // Convert SearchResults to the format expected by knowledge graph generation
-            let sourcesForKG = approvedSources.map { searchResult in
-                [
-                    "title": searchResult.title,
-                    "content": "Research article by \(searchResult.author) from \(searchResult.date). Reliability score: \(searchResult.reliabilityScore)%",
-                    "url": searchResult.url,
-                    "score": Double(searchResult.reliabilityScore) / 100.0,
-                    "published_date": searchResult.date,
-                    "query": projectConfig.topic,
-                    "reliability_score": searchResult.reliabilityScore
-                ] as [String: Any]
-            }
-            
-            // Add manual sources to knowledge graph inputs
-            let manualSourcesForKG = validManualSources.map { manualSource in
-                [
-                    "title": manualSource.type == .file ? "File Source" : "URL Source",
-                    "content": "Manual source: \(manualSource.path)",
-                    "url": manualSource.path,
-                    "score": 0.8,
-                    "published_date": "",
-                    "query": projectConfig.topic,
-                    "reliability_score": 80
-                ] as [String: Any]
-            }
-            
-            let allSources = sourcesForKG + manualSourcesForKG
-            
+        print("🔍 DEBUG: Project created, now starting knowledge graph generation")
+        
+        // Start knowledge graph generation with the same sources
+        if !allSources.isEmpty {
             if let createdProject = projectManager.selectedProject {
+                print("🔍 DEBUG: Calling startKnowledgeGraphGeneration with \(allSources.count) sources")
                 projectManager.startKnowledgeGraphGeneration(from: allSources, for: createdProject)
+            } else {
+                print("❌ DEBUG: No selected project found!")
             }
+        } else {
+            print("🔍 DEBUG: No sources available for knowledge graph generation!")
         }
         
+        print("🔍 DEBUG: About to dismiss the SourceCollectionView")
         dismiss()
     }
     
@@ -1332,6 +1461,7 @@ struct ManualSource: Identifiable {
     let path: String
     let type: ManualSourceType
     var status: ValidationStatus
+    var enhancementInfo: String?
 }
 
 enum ManualSourceType {
@@ -1374,6 +1504,7 @@ struct SearchResult: Identifiable {
     let date: String
     let reliabilityScore: Int
     let url: String
+    let content: String  // Store actual content from search results
     var status: SearchResultStatus
 }
 
@@ -1426,9 +1557,17 @@ struct ManualSourceRow: View {
                 .frame(width: 20)
             
             VStack(alignment: .leading, spacing: 2) {
-                Text(source.type == .file ? "File" : "URL")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                HStack {
+                    Text(source.type == .file ? "File" : "URL")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    
+                    if let enhancement = source.enhancementInfo {
+                        Text("• \(enhancement)")
+                            .font(.caption)
+                            .foregroundColor(.blue)
+                    }
+                }
                 
                 Text(source.path)
                     .font(.body)
@@ -1438,9 +1577,21 @@ struct ManualSourceRow: View {
             
             Spacer()
             
-            Text(source.status == .validating ? "Validating..." : (source.status == .valid ? "Valid" : "Invalid"))
-                .font(.caption)
-                .foregroundColor(source.status.color)
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(source.status == .validating ? "Validating..." : (source.status == .valid ? "Valid" : "Invalid"))
+                    .font(.caption)
+                    .foregroundColor(source.status.color)
+                
+                if source.status == .valid && source.enhancementInfo != nil {
+                    Text("Enhanced")
+                        .font(.caption2)
+                        .foregroundColor(.blue)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 1)
+                        .background(Color.blue.opacity(0.1))
+                        .cornerRadius(3)
+                }
+            }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -1650,21 +1801,28 @@ struct ProjectDetailView: View {
             // Tab View as specified in PRD
             TabView(selection: $selectedTab) {
                 // Learning Plan Tab
-                LearningPlanView(project: project)
+                LearningPlanView()
                     .tabItem {
                         Image(systemName: "doc.text")
                         Text("Learning Plan")
                     }
                     .tag(0)
                 
-                // Knowledge Graph Tab
-                KnowledgeGraphView(project: project)
-                    .environmentObject(projectManager)
+                // Knowledge Graph Tab  
+                KnowledgeGraphCanvasView()
                     .tabItem {
                         Image(systemName: "network")
                         Text("Knowledge Graph")
                     }
                     .tag(1)
+                
+                // Chat Assistant Tab
+                ChatView()
+                    .tabItem {
+                        Image(systemName: "message")
+                        Text("Chat")
+                    }
+                    .tag(2)
             }
         }
         .sheet(isPresented: $showingProjectInfo) {
@@ -2061,14 +2219,55 @@ struct NodeDetailView: View {
                             .italic()
                     } else {
                         ForEach(Array(node.properties.keys.sorted()), id: \.self) { key in
-                            HStack {
-                                Text(key)
-                                    .fontWeight(.medium)
-                                Spacer()
-                                Text(node.properties[key] ?? "")
-                                    .foregroundColor(.secondary)
+                            // Skip source_references as it has its own section
+                            if key != "source_references" {
+                                HStack {
+                                    Text(key)
+                                        .fontWeight(.medium)
+                                    Spacer()
+                                    Text(node.properties[key] ?? "")
+                                        .foregroundColor(.secondary)
+                                }
                             }
                         }
+                    }
+                }
+                
+                Section("Source References") {
+                    if let sourceReferences = node.properties["source_references"],
+                       !sourceReferences.isEmpty {
+                        let sources = sourceReferences.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+                        
+                        if sources.isEmpty {
+                            Text("No source references available")
+                                .foregroundColor(.secondary)
+                                .italic()
+                        } else {
+                            Text("This concept was derived from \(sources.count) source\(sources.count == 1 ? "" : "s"):")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                                .padding(.bottom, 4)
+                            
+                            ForEach(Array(sources.enumerated()), id: \.offset) { index, source in
+                                HStack {
+                                    Image(systemName: "doc.text")
+                                        .font(.caption2)
+                                        .foregroundColor(.blue)
+                                    
+                                    Text(source)
+                                        .font(.caption)
+                                        .foregroundColor(.primary)
+                                        .lineLimit(2)
+                                    
+                                    Spacer()
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+                    } else {
+                        Text("No source references available")
+                            .foregroundColor(.secondary)
+                            .italic()
                     }
                 }
                 
@@ -2366,99 +2565,7 @@ struct LoginView: View {
 
 // MARK: - Tab Views
 
-struct LearningPlanView: View {
-    let project: Project
-    @State private var learningPlanText: String
-    @State private var isEditing = false
-    
-    init(project: Project) {
-        self.project = project
-        self._learningPlanText = State(initialValue: project.learningPlan)
-    }
-    
-    var body: some View {
-        VStack(spacing: 0) {
-            // Header
-            HStack {
-                Text("Learning Plan")
-                    .font(.title2)
-                    .fontWeight(.bold)
-                
-                Spacer()
-                
-                Button(action: { isEditing.toggle() }) {
-                    Text(isEditing ? "View" : "Edit")
-                }
-                .buttonStyle(.bordered)
-            }
-            .padding()
-            .background(Color(nsColor: .controlBackgroundColor))
-            
-            Divider()
-            
-            // Content
-            if isEditing {
-                // Rich text editor
-                ScrollView {
-                    TextEditor(text: $learningPlanText)
-                        .font(.body)
-                        .padding()
-                }
-            } else {
-                // Rendered markdown view
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        // Simple markdown rendering for demo
-                        ForEach(learningPlanText.components(separatedBy: "\n"), id: \.self) { line in
-                            if line.hasPrefix("# ") {
-                                Text(String(line.dropFirst(2)))
-                                    .font(.title)
-                                    .fontWeight(.bold)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            } else if line.hasPrefix("## ") {
-                                Text(String(line.dropFirst(3)))
-                                    .font(.title2)
-                                    .fontWeight(.semibold)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, 8)
-                            } else if line.hasPrefix("### ") {
-                                Text(String(line.dropFirst(4)))
-                                    .font(.title3)
-                                    .fontWeight(.medium)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.top, 4)
-                            } else if line.hasPrefix("- ") {
-                                HStack(alignment: .top) {
-                                    Text("•")
-                                        .font(.body)
-                                    Text(String(line.dropFirst(2)))
-                                        .font(.body)
-                                    Spacer()
-                                }
-                                .padding(.leading, 16)
-                            } else if line.hasPrefix("1. ") || line.hasPrefix("2. ") || line.hasPrefix("3. ") || line.hasPrefix("4. ") {
-                                HStack(alignment: .top) {
-                                    Text(String(line.prefix(3)))
-                                        .font(.body)
-                                        .fontWeight(.medium)
-                                    Text(String(line.dropFirst(3)))
-                                        .font(.body)
-                                    Spacer()
-                                }
-                                .padding(.leading, 16)
-                            } else if !line.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Text(line)
-                                    .font(.body)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                            }
-                        }
-                    }
-                    .padding()
-                }
-            }
-        }
-    }
-}
+// LearningPlanView is now implemented in Sources/Glyph/Views/LearningPlanView.swift
 
 struct KnowledgeGraphView: View {
     let project: Project

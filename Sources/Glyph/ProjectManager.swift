@@ -71,10 +71,7 @@ class ProjectManager: ObservableObject {
         selectedProject = newProject
         saveProjects()
         
-        // Initialize with sample graph data
-        Task {
-            await initializeSampleGraph(for: newProject)
-        }
+        print("✅ Created new project: \(name) with empty state")
     }
     
     func createProjectWithCustomLearningPlan(name: String, description: String = "", topic: String = "",
@@ -103,9 +100,57 @@ class ProjectManager: ObservableObject {
         selectedProject = newProject
         saveProjects()
         
-        // Initialize with sample graph data
-        Task {
-            await initializeSampleGraph(for: newProject)
+        print("✅ Created new project with custom learning plan: \(name)")
+    }
+    
+    func createProjectWithCustomLearningPlanAndSources(name: String, description: String = "", topic: String = "",
+                      depth: ProjectDepth = .moderate, sourcePreferences: [SourcePreference] = [.reliable],
+                      filePaths: [String] = [], urls: [String] = [],
+                      hypotheses: String = "", controversialAspects: String = "",
+                      sensitivityLevel: SensitivityLevel = .medium, learningPlan: String, sources: [[String: Any]]) {
+        var newProject = Project(
+            name: name,
+            description: description,
+            topic: topic,
+            depth: depth,
+            sourcePreferences: sourcePreferences,
+            filePaths: filePaths,
+            urls: urls,
+            hypotheses: hypotheses,
+            controversialAspects: controversialAspects,
+            sensitivityLevel: sensitivityLevel,
+            isOnline: isOnlineMode
+        )
+        
+        // Override the default learning plan with the custom one
+        newProject.learningPlan = learningPlan
+        
+        // Convert and store sources
+        newProject.sources = sources.map { sourceDict in
+            ProcessedSource(
+                title: sourceDict["title"] as? String ?? "Unknown Title",
+                content: sourceDict["content"] as? String ?? "",
+                url: sourceDict["url"] as? String ?? "",
+                score: sourceDict["score"] as? Double ?? 0.8,
+                publishedDate: sourceDict["published_date"] as? String ?? "",
+                query: sourceDict["query"] as? String ?? "",
+                reliabilityScore: sourceDict["reliability_score"] as? Int ?? 80,
+                sourceType: sourceDict["source_type"] as? String ?? "web",
+                wordCount: sourceDict["word_count"] as? Int ?? 0
+            )
+        }
+        
+        print("🔍 DEBUG: About to store \(sources.count) sources in new project")
+        print("🔍 DEBUG: First source title: \(sources.first?["title"] as? String ?? "none")")
+        
+        projects.append(newProject)
+        selectedProject = newProject
+        saveProjects()
+        
+        print("✅ Created new project with custom learning plan and \(sources.count) sources: \(name)")
+        print("🔍 DEBUG: Stored project sources: \(newProject.sources?.count ?? 0)")
+        if let firstSource = newProject.sources?.first {
+            print("🔍 DEBUG: First stored source: \(firstSource.title)")
         }
     }
     
@@ -132,7 +177,14 @@ class ProjectManager: ObservableObject {
     
     /// Complete knowledge graph generation and update the project
     func completeKnowledgeGraphGeneration(with graphData: GraphData) {
-        guard let project = selectedProject else { return }
+        guard let project = selectedProject else { 
+            print("❌ DEBUG: No selected project for graph completion")
+            return 
+        }
+        
+        print("🔍 DEBUG: Completing knowledge graph generation for project: \(project.name)")
+        print("🔍 DEBUG: Received graph data: \(graphData.nodes.count) nodes, \(graphData.edges.count) edges")
+        print("🔍 DEBUG: Minimal subgraph: \(graphData.minimalSubgraph?.nodes.count ?? 0) nodes")
         
         // Update the project with the generated graph data
         if let index = projects.firstIndex(where: { $0.id == project.id }) {
@@ -142,6 +194,10 @@ class ProjectManager: ObservableObject {
             // Update selected project
             selectedProject = projects[index]
             
+            print("🔍 DEBUG: Updated project at index \(index)")
+            print("🔍 DEBUG: Project now has \(projects[index].graphData?.nodes.count ?? 0) nodes")
+            print("🔍 DEBUG: Project sources count: \(projects[index].sources?.count ?? 0)")
+            
             // Save changes
             saveProjects()
             
@@ -149,6 +205,8 @@ class ProjectManager: ObservableObject {
             if let minimalSubgraph = graphData.minimalSubgraph {
                 print("   🎯 Minimal subgraph: \(minimalSubgraph.nodes.count) nodes, \(minimalSubgraph.edges.count) edges")
             }
+        } else {
+            print("❌ DEBUG: Could not find project index for project \(project.id)")
         }
         
         // Hide the progress view

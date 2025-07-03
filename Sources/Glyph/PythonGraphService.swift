@@ -337,8 +337,8 @@ class PythonGraphService: ObservableObject {
             }
             
             // Race between Python execution and timeout
-            let result = try await withTaskCancellationHandler {
-                try await pythonTask.value
+            let result = await withTaskCancellationHandler {
+                await pythonTask.value
             } onCancel: {
                 timeoutTask.cancel()
             }
@@ -425,7 +425,7 @@ class PythonGraphService: ObservableObject {
                 print("✅ Knowledge graph generation completed successfully")
                 print("   📊 Nodes: \(swiftNodes.count)")
                 print("   🔗 Edges: \(swiftEdges.count)")
-                print("   🎯 Minimal nodes: \(swiftMinimalSubgraph["nodes"] as? [[String: Any]] ?? [])")
+                // // print("   🎯 Minimal nodes: \(swiftMinimalSubgraph["nodes"] as? [[String: Any]] ?? [])")
                 
                 return [
                     "success": true,
@@ -480,6 +480,348 @@ class PythonGraphService: ObservableObject {
         }
     }
     
+    // MARK: - Enhanced Source Processing
+    
+    /// Process manual sources (files, folders, URLs) with intelligent expansion
+    func processManualSources(
+        filePaths: [String],
+        urls: [String], 
+        topic: String,
+        maxPages: Int = 10
+    ) async throws -> [String: Any] {
+        guard isInitialized else {
+            throw APIError.networkError("Python not initialized")
+        }
+        
+        print("🔄 Starting enhanced source processing...")
+        print("   📁 File paths: \(filePaths.count)")
+        print("   🌐 URLs: \(urls.count)")
+        print("   📝 Topic: \(topic)")
+        
+        do {
+            // Call the enhanced source processing module
+            let enhancedModule = try Python.attemptImport("enhanced_source_processing")
+            
+            // Get OpenAI API key for AI-powered URL filtering
+            let openaiApiKey = EnvironmentService.shared.getAPIKey(for: "OPENAI_API_KEY") ?? ""
+            
+            // Call the Python function directly on the module (like knowledge graph generation does)
+            let pythonResult = enhancedModule.process_manual_sources_sync(
+                filePaths, 
+                urls, 
+                topic, 
+                maxPages, 
+                openaiApiKey
+            )
+            
+            // Convert Python result to Swift dictionary
+            let swiftResult = convertPythonToSwift(pythonResult)
+            
+            if let resultDict = swiftResult as? [String: Any] {
+                let totalSources = resultDict["total_sources"] as? Int ?? 0
+                let metadata = resultDict["metadata"] as? [String: Any] ?? [:]
+                let errors = (metadata["errors"] as? [String]) ?? []
+                
+                print("✅ Enhanced source processing completed:")
+                print("   📄 Total sources: \(totalSources)")
+                print("   📁 Files processed: \(metadata["files_processed"] ?? 0)")
+                print("   🌐 URLs expanded: \(metadata["total_discovered_pages"] ?? 0)")
+                
+                if !errors.isEmpty {
+                    print("   ⚠️ Errors encountered: \(errors.count)")
+                    for error in errors {
+                        print("     • \(error)")
+                    }
+                }
+                
+                return resultDict
+            }
+            
+        } catch {
+            print("❌ Enhanced source processing failed: \(error)")
+            print("🔄 Falling back to basic processing")
+            
+            // Fallback to basic processing
+            return generateBasicManualSources(filePaths: filePaths, urls: urls, topic: topic)
+        }
+        
+        return generateBasicManualSources(filePaths: filePaths, urls: urls, topic: topic)
+    }
+    
+    private func generateBasicManualSources(filePaths: [String], urls: [String], topic: String) -> [String: Any] {
+        print("🔄 Using basic manual source processing...")
+        
+        var sources: [[String: Any]] = []
+        var metadata: [String: Any] = [
+            "files_processed": 0,
+            "folders_scanned": 0,
+            "urls_expanded": 0,
+            "total_discovered_pages": 0,
+            "errors": []
+        ]
+        
+        // Process file paths
+        for filePath in filePaths {
+            guard !filePath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            
+            let fileManager = FileManager.default
+            let path = URL(fileURLWithPath: filePath)
+            
+            if fileManager.fileExists(atPath: filePath) {
+                let source: [String: Any] = [
+                    "title": path.lastPathComponent,
+                    "content": "Local file: \(filePath)",
+                    "url": "file://\(filePath)",
+                    "score": 0.9,
+                    "published_date": "",
+                    "query": "File: \(path.lastPathComponent)",
+                    "reliability_score": 90,
+                    "source_type": "file",
+                    "word_count": 0
+                ]
+                sources.append(source)
+                metadata["files_processed"] = (metadata["files_processed"] as? Int ?? 0) + 1
+            }
+        }
+        
+        // Process URLs
+        for url in urls {
+            guard !url.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { continue }
+            
+            let source: [String: Any] = [
+                "title": generateTitleFromURL(url),
+                "content": "User-provided URL: \(url)",
+                "url": url,
+                "score": 0.8,
+                "published_date": "",
+                "query": "Manual URL: \(url)",
+                "reliability_score": 75,
+                "source_type": "url",
+                "word_count": 0
+            ]
+            sources.append(source)
+            metadata["urls_expanded"] = (metadata["urls_expanded"] as? Int ?? 0) + 1
+        }
+        
+        print("✅ Basic processing: \(sources.count) sources created")
+        
+        return [
+            "sources": sources,
+            "metadata": metadata,
+            "total_sources": sources.count
+        ]
+    }
+    
+    private func generateTitleFromURL(_ url: String) -> String {
+        guard let urlComponents = URLComponents(string: url) else { return url }
+        
+        if let path = urlComponents.path.split(separator: "/").last {
+            let title = String(path)
+                .replacingOccurrences(of: "_", with: " ")
+                .replacingOccurrences(of: "-", with: " ")
+            return title.capitalized
+        }
+        
+        return urlComponents.host ?? url
+    }
+    
+    // MARK: - Learning Plan Generation
+    
+    /// Generate detailed learning plan from minimal subgraph
+    func generateLearningPlan(
+        from minimalSubgraph: [String: Any],
+        sources: [[String: Any]],
+        topic: String,
+        depth: String = "moderate"
+    ) async throws -> [String: Any] {
+        guard isInitialized else {
+            throw APIError.networkError("Python not initialized")
+        }
+        
+        print("🎓 Starting learning plan generation...")
+        print("🔍 DEBUG: Sources count: \(sources.count)")
+        print("🔍 DEBUG: Minimal subgraph nodes: \((minimalSubgraph["nodes"] as? [[String: Any]])?.count ?? 0)")
+        
+        // Log source content to verify we have real data
+        for (i, source) in sources.prefix(3).enumerated() {
+            print("🔍 DEBUG: Source \(i): title='\(source["title"] as? String ?? "none")', content length=\(String(source["content"] as? String ?? "").count)")
+        }
+        
+        do {
+            // Import our custom knowledge graph module
+            let kgModule = try Python.attemptImport("knowledge_graph_generation")
+            
+            // Convert Swift data to Python format
+            print("🔄 Converting minimal subgraph and sources to Python format...")
+            
+            let pythonMinimalSubgraph = Python.dict(minimalSubgraph.compactMapValues { value in
+                convertSwiftToPython(value)
+            })
+            
+            let pythonSources = Python.list(sources.map { source in
+                Python.dict(source.compactMapValues { value -> String in
+                    if let stringValue = value as? String {
+                        return stringValue
+                    } else if let intValue = value as? Int {
+                        return String(intValue)
+                    } else if let doubleValue = value as? Double {
+                        return String(doubleValue)
+                    } else {
+                        return String(describing: value)
+                    }
+                })
+            })
+            
+            print("🧠 Calling Python learning plan generation...")
+            
+            // Call the Python learning plan generation function
+            let result = kgModule.generate_learning_plan_from_minimal_subgraph(
+                pythonMinimalSubgraph,
+                pythonSources,
+                topic,
+                depth
+            )
+            
+            // Convert Python result to Swift format
+            var swiftResult: [String: Any] = [:]
+            let resultKeys = Array(result.keys())
+            for key in resultKeys {
+                let keyString = String(describing: key)
+                let value = result[key]
+                swiftResult[keyString] = convertPythonToSwift(value)
+            }
+            
+            print("✅ Learning plan generated successfully")
+            print("🔍 DEBUG: Result has concept_groups: \(swiftResult["concept_groups"] != nil)")
+            
+            // Log some concept details to verify source references are populated
+            if let conceptGroups = swiftResult["concept_groups"] as? [String: Any] {
+                for (phase, concepts) in conceptGroups {
+                    if let conceptArray = concepts as? [[String: Any]], let firstConcept = conceptArray.first {
+                        print("🔍 DEBUG: Phase '\(phase)' first concept: \(firstConcept["name"] as? String ?? "none")")
+                        print("🔍 DEBUG: Source references count: \((firstConcept["source_references"] as? [String])?.count ?? 0)")
+                    }
+                }
+            }
+            
+            return swiftResult
+            
+        } catch {
+            print("❌ Learning plan generation failed: \(error)")
+            print("🔄 Falling back to mock learning plan")
+            
+            // Generate mock learning plan
+            return generateMockLearningPlan(topic: topic, depth: depth, nodeCount: (minimalSubgraph["nodes"] as? [[String: Any]])?.count ?? 0)
+        }
+    }
+    
+    private func generateMockLearningPlan(topic: String, depth: String, nodeCount: Int) -> [String: Any] {
+        print("🎭 Generating mock learning plan...")
+        
+        let mockConceptGroups: [String: [[String: Any]]] = [
+            "foundation": [
+                [
+                    "name": "Introduction to \(topic)",
+                    "type": "concept",
+                    "description": "Foundational understanding of \(topic) principles and core concepts",
+                    "time_estimate": 2,
+                    "importance_score": 0.9,
+                    "connections": [],
+                    "resources": [["type": "Tutorial", "title": "\(topic) Basics", "description": "Getting started guide"]],
+                    "source_references": ["Academic Paper: Foundations of \(topic) (journal)", "Tutorial: Getting Started with \(topic) (web)", "Encyclopedia: \(topic) Overview (reference)"]
+                ],
+                [
+                    "name": "Core \(topic) Principles",
+                    "type": "concept", 
+                    "description": "Essential principles that underpin \(topic) methodology",
+                    "time_estimate": 2,
+                    "importance_score": 0.85,
+                    "connections": [],
+                    "resources": [["type": "Guide", "title": "\(topic) Principles", "description": "Comprehensive principles guide"]],
+                    "source_references": ["Research Paper: Core Principles in \(topic) (academic)", "Blog Post: Understanding \(topic) Fundamentals (web)"]
+                ]
+            ],
+            "intermediate": [
+                [
+                    "name": "Advanced \(topic) Techniques",
+                    "type": "concept",
+                    "description": "More sophisticated approaches and methodologies in \(topic)",
+                    "time_estimate": 4,
+                    "importance_score": 0.7,
+                    "connections": [],
+                    "resources": [["type": "Advanced Guide", "title": "Advanced \(topic)", "description": "Deep dive into complex topics"]],
+                    "source_references": ["Technical Manual: Advanced \(topic) Methods (manual)", "Case Study: Real-world \(topic) Applications (web)", "Research: Modern \(topic) Approaches (academic)"]
+                ]
+            ],
+            "advanced": [
+                [
+                    "name": "Expert-Level \(topic)",
+                    "type": "insight",
+                    "description": "Cutting-edge developments and expert insights in \(topic)",
+                    "time_estimate": 6,
+                    "importance_score": 0.6,
+                    "connections": [],
+                    "resources": [["type": "Expert Analysis", "title": "Expert \(topic) Insights", "description": "Professional insights and analysis"]],
+                    "source_references": ["Expert Interview: Leading \(topic) Practitioners (video)", "White Paper: Future of \(topic) (report)", "Conference Paper: Latest \(topic) Research (academic)"]
+                ]
+            ],
+            "practical": [
+                [
+                    "name": "Real-world \(topic) Implementation",
+                    "type": "insight",
+                    "description": "Practical insights for implementing \(topic) in real scenarios",
+                    "time_estimate": 3,
+                    "importance_score": 0.8,
+                    "connections": [],
+                    "resources": [["type": "Case Study", "title": "\(topic) Case Studies", "description": "Real-world examples"]],
+                    "source_references": ["Implementation Guide: \(topic) Best Practices (manual)", "Case Study: Successful \(topic) Projects (web)", "Tutorial: Hands-on \(topic) Workshop (video)"]
+                ]
+            ]
+        ]
+        
+        return [
+            "topic": topic,
+            "depth": depth,
+            "total_estimated_time": 21,
+            "total_concepts": nodeCount,
+            "phase_breakdown": [
+                "foundation": 4,
+                "intermediate": 6,
+                "advanced": 8,
+                "practical": 3
+            ],
+            "concept_groups": mockConceptGroups,
+            "sources_used": 5,
+            "learning_path_rationale": "Concepts ordered by centrality analysis to ensure proper foundational understanding with full source traceability."
+        ]
+    }
+    
+    private func convertSwiftToPython(_ value: Any) -> PythonObject {
+        if let stringValue = value as? String {
+            return Python.str(stringValue)
+        } else if let intValue = value as? Int {
+            return Python.int(intValue)
+        } else if let doubleValue = value as? Double {
+            return Python.float(doubleValue)
+        } else if let boolValue = value as? Bool {
+            return Python.bool(boolValue)
+        } else if let arrayValue = value as? [Any] {
+            let pythonList = Python.list()
+            for item in arrayValue {
+                pythonList.append(convertSwiftToPython(item))
+            }
+            return pythonList
+        } else if let dictValue = value as? [String: Any] {
+            let pythonDict = Python.dict()
+            for (key, val) in dictValue {
+                pythonDict[key] = convertSwiftToPython(val)
+            }
+            return pythonDict
+        } else {
+            return Python.str(String(describing: value))
+        }
+    }
+
     private func generateMockKnowledgeGraph(
         from sources: [[String: Any]], 
         topic: String,
@@ -924,7 +1266,7 @@ class PythonGraphService: ObservableObject {
                 if let statusDict = try JSONSerialization.jsonObject(with: statusData) as? [String: Any] {
                     let progress = statusDict["progress"] as? Double ?? 0.0
                     let message = statusDict["message"] as? String ?? ""
-                    let completed = statusDict["completed"] as? Bool ?? false
+                    let _ = statusDict["completed"] as? Bool ?? false
                     
                     print("📈 Final progress update: \(Int(progress * 100))% - \(message)")
                     DispatchQueue.main.async {
@@ -952,36 +1294,30 @@ class PythonGraphService: ObservableObject {
         
         // Check if it's a Python list
         if stringValue.hasPrefix("[") && stringValue.hasSuffix("]") {
-            do {
-                // Try to iterate as a Python list
-                let listArray = Array(value)
-                var swiftArray: [Any] = []
-                for item in listArray {
-                    swiftArray.append(convertPythonToSwift(item))
-                }
-                return swiftArray
-            } catch {
-                // If iteration fails, treat as string
-                return stringValue
+            // Try to iterate as a Python list
+            let listArray = Array(value)
+            var swiftArray: [Any] = []
+            for item in listArray {
+                swiftArray.append(convertPythonToSwift(item))
             }
+            // If all elements are String, return as [String] for easier casting
+            if swiftArray.allSatisfy({ $0 is String }) {
+                return swiftArray as! [String]
+            }
+            return swiftArray
         }
         
         // Check if it's a Python dictionary
         if stringValue.hasPrefix("{") && stringValue.hasSuffix("}") {
-            do {
-                // Try to iterate as a Python dict
-                let keys = Array(value.keys())
-                var swiftDict: [String: Any] = [:]
-                for key in keys {
-                    let keyString = String(describing: key)
-                    let dictValue = value[key]
-                    swiftDict[keyString] = convertPythonToSwift(dictValue)
-                }
-                return swiftDict
-            } catch {
-                // If iteration fails, treat as string
-                return stringValue
+            // Try to iterate as a Python dict
+            let keys = Array(value.keys())
+            var swiftDict: [String: Any] = [:]
+            for key in keys {
+                let keyString = String(describing: key)
+                let dictValue = value[key]
+                swiftDict[keyString] = convertPythonToSwift(dictValue)
             }
+            return swiftDict
         }
         
         // Handle basic types

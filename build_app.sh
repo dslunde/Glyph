@@ -19,6 +19,11 @@ PYTHON_VERSION="3.13.3"
 PYTHON_HOME="/Users/darrenlund/.pyenv/versions/$PYTHON_VERSION"
 PYTHON_EXEC="$PYTHON_HOME/bin/python3.13"
 
+# Cache Configuration
+CACHE_DIR=".build/python_cache"
+CACHE_PACKAGES_DIR="$CACHE_DIR/site-packages"
+CACHE_HASH_FILE="$CACHE_DIR/requirements.hash"
+
 # Verify Python installation
 echo "🐍 Verifying Python $PYTHON_VERSION installation..."
 if [ ! -f "$PYTHON_EXEC" ]; then
@@ -95,21 +100,94 @@ if [ -d "$PYTHON_HOME/include/python3.13" ]; then
     cp -r "$PYTHON_HOME/include/python3.13" "$EMBEDDED_PYTHON/include/"
 fi
 
+# === PYTHON PACKAGE CACHING SYSTEM ===
+echo "📦 Setting up Python package caching..."
+
+# Create cache directory
+mkdir -p "$CACHE_DIR"
+
+# Function to calculate hash of requirements.txt
+calculate_requirements_hash() {
+    if [ -f "requirements.txt" ]; then
+        # Filter out comments and empty lines, then hash
+        grep -v '^#' requirements.txt | grep -v '^$' | sort | shasum -a 256 | cut -d' ' -f1
+    else
+        echo "no-requirements"
+    fi
+}
+
+# Check if we can use cached packages
+CURRENT_HASH=$(calculate_requirements_hash)
+USE_CACHE=false
+
+if [ -f "$CACHE_HASH_FILE" ] && [ -d "$CACHE_PACKAGES_DIR" ]; then
+    CACHED_HASH=$(cat "$CACHE_HASH_FILE")
+    if [ "$CURRENT_HASH" = "$CACHED_HASH" ]; then
+        echo "🎯 Requirements unchanged - using cached packages!"
+        USE_CACHE=true
+    else
+        echo "📋 Requirements changed - will refresh cache"
+    fi
+else
+    echo "📋 No cache found - will create fresh cache"
+fi
+
 # Install required Python packages into embedded location
 echo "📦 Installing required Python packages..."
 EMBEDDED_SITE_PACKAGES="$EMBEDDED_PYTHON/lib/python3.13/site-packages"
 
-# Install core packages needed by the app
-"$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
-    --upgrade --no-deps --no-cache-dir \
-    numpy==2.3.1 \
-    networkx==3.5 \
-    requests>=2.31.0 \
-    python-dotenv>=1.0.0 \
-    openai>=1.0.0 \
-    tavily-python>=0.3.0 || {
-    echo "⚠️  Some packages failed to install, continuing..."
-}
+if [ "$USE_CACHE" = true ]; then
+    # Use cached packages
+    echo "⚡ Copying packages from cache..."
+    cp -r "$CACHE_PACKAGES_DIR/." "$EMBEDDED_SITE_PACKAGES/"
+    echo "✅ Packages restored from cache!"
+else
+    # Fresh install - download packages
+    if [ -f "requirements.txt" ]; then
+        echo "📋 Installing packages from requirements.txt..."
+        echo "📦 Package list:"
+        grep -v '^#' requirements.txt | grep -v '^$' | head -10 | sed 's/^/   ✓ /'
+        if [ $(grep -v '^#' requirements.txt | grep -v '^$' | wc -l) -gt 10 ]; then
+            echo "   ... and $(( $(grep -v '^#' requirements.txt | grep -v '^$' | wc -l) - 10 )) more packages"
+        fi
+        echo ""
+        
+        "$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
+            --upgrade --no-cache-dir -r requirements.txt || {
+            echo "⚠️  Some packages failed to install, continuing..."
+        }
+        
+        # Update cache after successful install
+        echo "💾 Updating package cache..."
+        rm -rf "$CACHE_PACKAGES_DIR"
+        mkdir -p "$CACHE_PACKAGES_DIR"
+        cp -r "$EMBEDDED_SITE_PACKAGES/." "$CACHE_PACKAGES_DIR/"
+        echo "$CURRENT_HASH" > "$CACHE_HASH_FILE"
+        echo "✅ Package cache updated!"
+        
+    else
+        echo "⚠️  requirements.txt not found, installing core packages..."
+        # Fallback to core packages if requirements.txt is missing
+        "$PYTHON_EXEC" -m pip install --target "$EMBEDDED_SITE_PACKAGES" \
+            --upgrade --no-deps --no-cache-dir \
+            numpy==2.3.1 \
+            networkx==3.5 \
+            requests>=2.31.0 \
+            python-dotenv>=1.0.0 \
+            openai>=1.0.0 \
+            tavily-python>=0.3.0 || {
+            echo "⚠️  Some packages failed to install, continuing..."
+        }
+        
+        # Update cache for fallback packages too
+        echo "💾 Updating package cache..."
+        rm -rf "$CACHE_PACKAGES_DIR"
+        mkdir -p "$CACHE_PACKAGES_DIR"
+        cp -r "$EMBEDDED_SITE_PACKAGES/." "$CACHE_PACKAGES_DIR/"
+        echo "$CURRENT_HASH" > "$CACHE_HASH_FILE"
+        echo "✅ Package cache updated!"
+    fi
+fi
 
 # Copy custom Python modules to embedded site-packages
 echo "📦 Installing custom Python modules..."
@@ -117,6 +195,7 @@ CUSTOM_PYTHON_FILES=(
     "Sources/Glyph/PythonAPIService.py"
     "Sources/Glyph/source_collection_workflow.py"
     "Sources/Glyph/knowledge_graph_generation.py"
+    "Sources/Glyph/enhanced_source_processing.py"
 )
 
 for file in "${CUSTOM_PYTHON_FILES[@]}"; do
@@ -201,7 +280,7 @@ echo "   ✓ Python Version: $PYTHON_VERSION"
 echo "   ✓ Python Path: Contents/Python"
 echo "   ✓ App Sandbox: Disabled"
 echo "   ✓ Library Validation: Disabled"
-echo "   ✓ Core Packages: numpy, networkx, requests, openai, tavily-python"
+echo "   ✓ Packages: All packages from requirements.txt installed"
 echo ""
 echo "🚀 To run your app:"
 echo "   Double-click: $DESKTOP_APP"
