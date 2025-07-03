@@ -50,7 +50,7 @@ def perform_advanced_analysis(
     
     try:
         # Initialize OpenAI if available and key provided
-        llm_available = OPENAI_AVAILABLE and openai_api_key.strip()
+        llm_available = OPENAI_AVAILABLE and bool(openai_api_key.strip())
         if llm_available:
             openai.api_key = openai_api_key
             print("🤖 LLM analysis enabled")
