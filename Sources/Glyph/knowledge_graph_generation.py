@@ -108,10 +108,11 @@ except ImportError:
 
 
 class TopicRelevanceConfig:
-    """Configuration for topic relevance filtering in knowledge graph generation.
+    """Configuration for topic relevance and source connectivity filtering in knowledge graph generation.
     
     This class defines the parameters used to filter nodes based on their relevance
-    to the main topic of study, helping to create more focused knowledge graphs.
+    to the main topic of study and their connections to original sources, helping to 
+    create more focused and trustworthy knowledge graphs.
     
     Attributes:
         relevance_threshold: Minimum semantic similarity score for nodes to be retained.
@@ -119,6 +120,8 @@ class TopicRelevanceConfig:
         enable_context_filtering: Whether to use context-based filtering as fallback.
         max_nodes_before_filtering: Maximum number of nodes before applying filtering.
         similarity_batch_size: Batch size for similarity calculations to manage memory.
+        enable_source_connectivity_filtering: Whether to filter concepts without source connections.
+        require_verified_sources: Whether source references must match original source titles.
     """
     
     def __init__(
@@ -127,7 +130,9 @@ class TopicRelevanceConfig:
         enable_semantic_filtering: bool = True,
         enable_context_filtering: bool = True,
         max_nodes_before_filtering: int = 1000,
-        similarity_batch_size: int = 32
+        similarity_batch_size: int = 32,
+        enable_source_connectivity_filtering: bool = True,
+        require_verified_sources: bool = True
     ) -> None:
         """Initialize topic relevance configuration.
         
@@ -137,12 +142,16 @@ class TopicRelevanceConfig:
             enable_context_filtering: Enable context-based filtering fallback.
             max_nodes_before_filtering: Apply filtering only if nodes exceed this count.
             similarity_batch_size: Batch size for similarity calculations.
+            enable_source_connectivity_filtering: Filter concepts without source connections.
+            require_verified_sources: Require source references to match original sources.
         """
         self.relevance_threshold = relevance_threshold
         self.enable_semantic_filtering = enable_semantic_filtering
         self.enable_context_filtering = enable_context_filtering
         self.max_nodes_before_filtering = max_nodes_before_filtering
         self.similarity_batch_size = similarity_batch_size
+        self.enable_source_connectivity_filtering = enable_source_connectivity_filtering
+        self.require_verified_sources = require_verified_sources
 
 
 class KnowledgeGraphBuilder:
@@ -1250,7 +1259,9 @@ def generate_knowledge_graph_from_sources(
 def create_topic_relevance_config(
     relevance_threshold: float = 0.3,
     enable_filtering: bool = True,
-    max_nodes_before_filtering: int = 1000
+    max_nodes_before_filtering: int = 1000,
+    enable_source_connectivity_filtering: bool = True,
+    require_verified_sources: bool = True
 ) -> TopicRelevanceConfig:
     """Create a topic relevance configuration with common settings.
     
@@ -1258,25 +1269,38 @@ def create_topic_relevance_config(
         relevance_threshold: Minimum similarity score for node retention (0.0-1.0).
         enable_filtering: Whether to enable topic relevance filtering.
         max_nodes_before_filtering: Apply filtering only if nodes exceed this count.
+        enable_source_connectivity_filtering: Whether to filter concepts without source connections.
+        require_verified_sources: Whether source references must match original sources.
         
     Returns:
         TopicRelevanceConfig instance with specified settings.
         
     Examples:
-        >>> # Conservative filtering (keeps more nodes)
-        >>> config = create_topic_relevance_config(relevance_threshold=0.2)
+        >>> # Conservative filtering (keeps more nodes, lenient source requirements)
+        >>> config = create_topic_relevance_config(
+        ...     relevance_threshold=0.2, 
+        ...     require_verified_sources=False
+        ... )
         >>> 
-        >>> # Aggressive filtering (removes more irrelevant nodes)
-        >>> config = create_topic_relevance_config(relevance_threshold=0.5)
+        >>> # Aggressive filtering (strict topic and source requirements)
+        >>> config = create_topic_relevance_config(
+        ...     relevance_threshold=0.5,
+        ...     require_verified_sources=True
+        ... )
         >>>
-        >>> # Disable filtering entirely
-        >>> config = create_topic_relevance_config(enable_filtering=False)
+        >>> # Disable all filtering
+        >>> config = create_topic_relevance_config(
+        ...     enable_filtering=False,
+        ...     enable_source_connectivity_filtering=False
+        ... )
     """
     return TopicRelevanceConfig(
         relevance_threshold=relevance_threshold,
         enable_semantic_filtering=enable_filtering,
         enable_context_filtering=enable_filtering,
-        max_nodes_before_filtering=max_nodes_before_filtering
+        max_nodes_before_filtering=max_nodes_before_filtering,
+        enable_source_connectivity_filtering=enable_source_connectivity_filtering,
+        require_verified_sources=require_verified_sources
     )
 
 # MARK: - Helper Functions for Enhanced Learning Plan Generation
@@ -1430,7 +1454,16 @@ def map_nodes_to_meaningful_concepts(
     source_concepts: List[Dict[str, Any]], 
     sources: List[Dict[str, Any]]
 ) -> Dict[str, Any]:
-    """Map graph nodes to meaningful concepts from sources."""
+    """Map graph nodes to meaningful concepts from sources with strict source connectivity requirements.
+    
+    Args:
+        node_dict: Dictionary of graph nodes to process.
+        source_concepts: List of concepts extracted from original sources.
+        sources: Original source documents.
+        
+    Returns:
+        Dictionary mapping node IDs to enhanced concept data with verified source connections.
+    """
     enhanced_concepts = {}
     
     for node_id, node in node_dict.items():
@@ -1492,19 +1525,113 @@ def map_nodes_to_meaningful_concepts(
                 'node_source_references': node_source_references
             }
         else:
-            # Fall back to node label but enhance it
-            enhanced_name = node.get('label', 'Unknown Concept').title()
-            enhanced_concepts[node_id] = {
-                'name': enhanced_name,
-                'type': node.get('type', 'concept'),
-                'description': f"Key concept related to {enhanced_name}",
-                'resources': generate_basic_resources(enhanced_name),
-                'source_references': node_source_references,
-                'context': '',
-                'node_source_references': node_source_references
-            }
+            # Only include if node has valid source references from original processing
+            if node_source_references:
+                enhanced_name = node.get('label', 'Unknown Concept').title()
+                enhanced_concepts[node_id] = {
+                    'name': enhanced_name,
+                    'type': node.get('type', 'concept'),
+                    'description': f"Key concept related to {enhanced_name}",
+                    'resources': generate_basic_resources(enhanced_name),
+                    'source_references': node_source_references,
+                    'context': '',
+                    'node_source_references': node_source_references
+                }
+            # If no source references, concept is excluded (no fallback creation)
     
     return enhanced_concepts
+
+
+def filter_concepts_by_source_connectivity(
+    enhanced_concepts: Dict[str, Any],
+    sources: List[Dict[str, Any]],
+    require_verified_sources: bool = True
+) -> Tuple[Dict[str, Any], List[str]]:
+    """Filter concepts to ensure each has verifiable connections to original sources.
+    
+    Args:
+        enhanced_concepts: Dictionary of enhanced concepts to filter.
+        sources: Original source documents for verification.
+        require_verified_sources: Whether to require source titles that match original sources.
+        
+    Returns:
+        Tuple of (filtered_concepts, removed_concept_names).
+    """
+    if not sources:
+        print("⚠️ No sources provided for connectivity verification")
+        return enhanced_concepts, []
+    
+    print(f"🔍 Filtering {len(enhanced_concepts)} concepts for source connectivity...")
+    
+    # Create lookup of source titles for verification
+    source_titles = set()
+    for source in sources:
+        title = source.get('title', '').strip()
+        if title:
+            source_titles.add(title.lower())
+    
+    filtered_concepts = {}
+    removed_concepts = []
+    
+    for node_id, concept in enhanced_concepts.items():
+        concept_name = concept.get('name', 'Unknown')
+        
+        # Get all source references for this concept
+        source_refs = concept.get('source_references', [])
+        node_source_refs = concept.get('node_source_references', [])
+        all_refs = source_refs + node_source_refs
+        
+        # Check if concept has any source references
+        valid_refs = [ref for ref in all_refs if ref and ref.strip() and ref.lower() != 'none']
+        
+        if not valid_refs:
+            removed_concepts.append(concept_name)
+            print(f"   🗑️  Removed '{concept_name}': No source references")
+            continue
+        
+        # If requiring verified sources, check if any reference matches original sources
+        if require_verified_sources:
+            has_verified_source = False
+            for ref in valid_refs:
+                # Extract source title from reference (handle format like "Title (type)")
+                ref_title = ref.split('(')[0].strip().lower()
+                if ref_title in source_titles:
+                    has_verified_source = True
+                    break
+                
+                # Also check partial matches for source verification
+                for source_title in source_titles:
+                    if ref_title in source_title or source_title in ref_title:
+                        has_verified_source = True
+                        break
+            
+            if not has_verified_source:
+                removed_concepts.append(concept_name)
+                print(f"   🗑️  Removed '{concept_name}': No verifiable source connection")
+                print(f"        References: {valid_refs[:2]}...")  # Show first 2 refs for debugging
+                continue
+        
+        # Concept passes connectivity requirements
+        filtered_concepts[node_id] = concept
+    
+    removed_count = len(removed_concepts)
+    retained_count = len(filtered_concepts)
+    
+    if removed_count > 0:
+        print(f"🧹 Source connectivity filter removed {removed_count} concepts")
+        print(f"📊 Retained {retained_count} concepts with verified source connections")
+        print(f"   Removal rate: {removed_count/(removed_count + retained_count):.1%}")
+        
+        # Show examples of what was removed vs kept
+        if removed_concepts:
+            print(f"   Examples removed: {', '.join(removed_concepts[:3])}")
+        if filtered_concepts:
+            kept_examples = [c.get('name', 'Unknown') for c in list(filtered_concepts.values())[:3]]
+            print(f"   Examples kept: {', '.join(kept_examples)}")
+    else:
+        print(f"✅ All {retained_count} concepts have verified source connections")
+    
+    return filtered_concepts, removed_concepts
 
 def generate_concept_description(concept: Dict[str, Any], sources: List[Dict[str, Any]]) -> str:
     """Generate a meaningful description for a concept."""
@@ -1697,6 +1824,25 @@ def generate_learning_plan_from_minimal_subgraph(
         # Map graph nodes to meaningful concepts using source content
         enhanced_concepts = map_nodes_to_meaningful_concepts(node_dict, source_concepts, sources)
         
+        # Filter concepts to ensure source connectivity (if enabled)
+        removed_concepts = []
+        # Note: Using default config here since learning plan generation doesn't receive topic_config directly
+        # This could be enhanced in future to accept configuration parameter
+        enable_source_filtering = True  # Default to enabled for stricter filtering
+        require_verified = True  # Default to verified sources requirement
+        
+        if enable_source_filtering:
+            enhanced_concepts, removed_concepts = filter_concepts_by_source_connectivity(
+                enhanced_concepts, sources, require_verified_sources=require_verified
+            )
+            
+            if removed_concepts:
+                print(f"🔗 Source connectivity filter removed {len(removed_concepts)} concepts without verified source connections")
+            else:
+                print(f"✅ All concepts have verified connections to original sources")
+        else:
+            print(f"🔄 Source connectivity filtering disabled - keeping all {len(enhanced_concepts)} concepts")
+        
         # Perform topological analysis for learning order
         try:
             centrality_scores = nx.degree_centrality(G)
@@ -1804,10 +1950,14 @@ def generate_learning_plan_from_minimal_subgraph(
             'concept_groups': concept_groups,
             'sources_used': len(sources),
             'source_bibliography': source_bibliography,
+            'source_connectivity_enabled': enable_source_filtering,
+            'concepts_removed_by_source_filter': len(removed_concepts) if removed_concepts else 0,
             'learning_path_rationale': (
                 f"Learning path designed using centrality analysis of {len(nodes)} key concepts. "
                 f"Concepts are ordered to ensure foundational understanding before advanced topics, "
                 f"with direct connections to {len(sources)} verified source materials."
+                + (f" Source connectivity filtering removed {len(removed_concepts)} unverified concepts." 
+                   if removed_concepts else " All concepts have verified source connections.")
             )
         }
         
