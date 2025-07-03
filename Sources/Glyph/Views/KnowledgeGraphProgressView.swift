@@ -19,10 +19,10 @@ struct KnowledgeGraphProgressView: View {
         VStack(spacing: 24) {
             // Header
             VStack(spacing: 8) {
-                Image(systemName: "brain.head.profile")
-                    .font(.system(size: 48))
-                    .foregroundColor(.blue)
-                    .symbolEffect(.pulse, options: .repeat(.continuous))
+                Image("glyph_icon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 48, height: 48)
                 
                 Text("Building Knowledge Graph")
                     .font(.title)

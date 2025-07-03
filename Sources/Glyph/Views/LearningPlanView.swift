@@ -110,9 +110,10 @@ struct LearningPlanView: View {
             } else {
                 // Empty state - show default or prompt to generate
                 VStack(spacing: 20) {
-                    Image(systemName: "doc.text")
-                        .font(.system(size: 48))
-                        .foregroundColor(.secondary)
+                    Image("glyph_icon")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .frame(width: 48, height: 48)
                     
                     Text("Learning Plan")
                         .font(.title2)

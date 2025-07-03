@@ -40,9 +40,16 @@ struct ContentView: View {
                     VStack {
                         // Header with New Project button
                         HStack {
-                            Text("Glyph")
-                                .font(.title2)
-                                .fontWeight(.bold)
+                            HStack(spacing: 8) {
+                                Image("glyph_icon")
+                                    .resizable()
+                                    .aspectRatio(contentMode: .fit)
+                                    .frame(width: 24, height: 24)
+                                
+                                Text("Glyph")
+                                    .font(.title2)
+                                    .fontWeight(.bold)
+                            }
                             
                             Spacer()
                             
@@ -123,9 +130,10 @@ struct ContentView: View {
                     } else {
                         // Welcome View
                         VStack {
-                            Image(systemName: "network")
-                                .font(.system(size: 64))
-                                .foregroundColor(.secondary)
+                            Image("glyph_icon")
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(width: 64, height: 64)
                             
                             Text("Welcome to Glyph")
                                 .font(.title)
@@ -2460,9 +2468,10 @@ struct LoginView: View {
         VStack(spacing: 30) {
             // App branding
             VStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 80))
-                    .foregroundColor(.purple)
+                Image("glyph_icon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 80, height: 80)
                 
                 VStack(spacing: 8) {
                     Text("Glyph")

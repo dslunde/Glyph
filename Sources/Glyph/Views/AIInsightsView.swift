@@ -369,9 +369,10 @@ struct AnalysisWelcomeView: View {
     var body: some View {
         VStack(spacing: 24) {
             VStack(spacing: 16) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 64))
-                    .foregroundColor(.blue)
+                Image("glyph_icon")
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(width: 64, height: 64)
                 
                 Text("Advanced Knowledge Analysis")
                     .font(.title)
