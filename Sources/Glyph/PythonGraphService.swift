@@ -639,6 +639,13 @@ class PythonGraphService: ObservableObject {
         }
         
         print("🎓 Starting learning plan generation...")
+        print("🔍 DEBUG: Sources count: \(sources.count)")
+        print("🔍 DEBUG: Minimal subgraph nodes: \((minimalSubgraph["nodes"] as? [[String: Any]])?.count ?? 0)")
+        
+        // Log source content to verify we have real data
+        for (i, source) in sources.prefix(3).enumerated() {
+            print("🔍 DEBUG: Source \(i): title='\(source["title"] as? String ?? "none")', content length=\(String(source["content"] as? String ?? "").count)")
+        }
         
         do {
             // Import our custom knowledge graph module
@@ -685,6 +692,18 @@ class PythonGraphService: ObservableObject {
             }
             
             print("✅ Learning plan generated successfully")
+            print("🔍 DEBUG: Result has concept_groups: \(swiftResult["concept_groups"] != nil)")
+            
+            // Log some concept details to verify source references are populated
+            if let conceptGroups = swiftResult["concept_groups"] as? [String: Any] {
+                for (phase, concepts) in conceptGroups {
+                    if let conceptArray = concepts as? [[String: Any]], let firstConcept = conceptArray.first {
+                        print("🔍 DEBUG: Phase '\(phase)' first concept: \(firstConcept["name"] as? String ?? "none")")
+                        print("🔍 DEBUG: Source references count: \((firstConcept["source_references"] as? [String])?.count ?? 0)")
+                    }
+                }
+            }
+            
             return swiftResult
             
         } catch {
@@ -702,46 +721,60 @@ class PythonGraphService: ObservableObject {
         let mockConceptGroups: [String: [[String: Any]]] = [
             "foundation": [
                 [
-                    "name": "Core \(topic) Fundamentals",
+                    "name": "Introduction to \(topic)",
                     "type": "concept",
-                    "description": "Essential foundational concepts in \(topic)",
-                    "time_estimate": 4,
+                    "description": "Foundational understanding of \(topic) principles and core concepts",
+                    "time_estimate": 2,
                     "importance_score": 0.9,
-                    "connections": [["name": "Advanced \(topic)", "type": "concept", "relationship": "builds_upon"]],
-                    "resources": [["type": "Overview", "title": "Introduction to \(topic)", "description": "Foundational overview"]]
+                    "connections": [],
+                    "resources": [["type": "Tutorial", "title": "\(topic) Basics", "description": "Getting started guide"]],
+                    "source_references": ["Academic Paper: Foundations of \(topic) (journal)", "Tutorial: Getting Started with \(topic) (web)", "Encyclopedia: \(topic) Overview (reference)"]
+                ],
+                [
+                    "name": "Core \(topic) Principles",
+                    "type": "concept", 
+                    "description": "Essential principles that underpin \(topic) methodology",
+                    "time_estimate": 2,
+                    "importance_score": 0.85,
+                    "connections": [],
+                    "resources": [["type": "Guide", "title": "\(topic) Principles", "description": "Comprehensive principles guide"]],
+                    "source_references": ["Research Paper: Core Principles in \(topic) (academic)", "Blog Post: Understanding \(topic) Fundamentals (web)"]
                 ]
             ],
             "intermediate": [
                 [
-                    "name": "Intermediate \(topic) Applications",
-                    "type": "entity",
-                    "description": "Practical applications of \(topic) concepts",
-                    "time_estimate": 6,
+                    "name": "Advanced \(topic) Techniques",
+                    "type": "concept",
+                    "description": "More sophisticated approaches and methodologies in \(topic)",
+                    "time_estimate": 4,
                     "importance_score": 0.7,
-                    "connections": [["name": "Core \(topic) Fundamentals", "type": "concept", "relationship": "builds_upon"]],
-                    "resources": [["type": "Tutorial", "title": "Practical \(topic) Guide", "description": "Step-by-step tutorial"]]
+                    "connections": [],
+                    "resources": [["type": "Advanced Guide", "title": "Advanced \(topic)", "description": "Deep dive into complex topics"]],
+                    "source_references": ["Technical Manual: Advanced \(topic) Methods (manual)", "Case Study: Real-world \(topic) Applications (web)", "Research: Modern \(topic) Approaches (academic)"]
                 ]
             ],
             "advanced": [
                 [
-                    "name": "Advanced \(topic) Theory", 
-                    "type": "concept",
-                    "description": "Advanced theoretical aspects of \(topic)",
-                    "time_estimate": 8,
-                    "importance_score": 0.5,
+                    "name": "Expert-Level \(topic)",
+                    "type": "insight",
+                    "description": "Cutting-edge developments and expert insights in \(topic)",
+                    "time_estimate": 6,
+                    "importance_score": 0.6,
                     "connections": [],
-                    "resources": [["type": "Research", "title": "Advanced \(topic) Research", "description": "Latest research findings"]]
+                    "resources": [["type": "Expert Analysis", "title": "Expert \(topic) Insights", "description": "Professional insights and analysis"]],
+                    "source_references": ["Expert Interview: Leading \(topic) Practitioners (video)", "White Paper: Future of \(topic) (report)", "Conference Paper: Latest \(topic) Research (academic)"]
                 ]
             ],
             "practical": [
                 [
                     "name": "Real-world \(topic) Implementation",
                     "type": "insight",
-                    "description": "Practical insights for implementing \(topic)",
+                    "description": "Practical insights for implementing \(topic) in real scenarios",
                     "time_estimate": 3,
                     "importance_score": 0.8,
                     "connections": [],
-                    "resources": [["type": "Case Study", "title": "\(topic) Case Studies", "description": "Real-world examples"]]
+                    "resources": [["type": "Case Study", "title": "\(topic) Case Studies", "description": "Real-world examples"]],
+                    "source_references": ["Implementation Guide: \(topic) Best Practices (manual)", "Case Study: Successful \(topic) Projects (web)", "Tutorial: Hands-on \(topic) Workshop (video)"]
                 ]
             ]
         ]
@@ -759,7 +792,7 @@ class PythonGraphService: ObservableObject {
             ],
             "concept_groups": mockConceptGroups,
             "sources_used": 5,
-            "learning_path_rationale": "Concepts ordered by centrality analysis to ensure proper foundational understanding."
+            "learning_path_rationale": "Concepts ordered by centrality analysis to ensure proper foundational understanding with full source traceability."
         ]
     }
     

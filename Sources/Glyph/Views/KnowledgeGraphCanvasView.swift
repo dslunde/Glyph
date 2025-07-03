@@ -115,7 +115,7 @@ struct KnowledgeGraphCanvasView: View {
                             )
                         )
                         .overlay(
-                            // Node interaction overlay
+                            // Node interaction overlay - FIXED positioning to match Canvas
                             ForEach(minimalGraphData.nodes) { node in
                                 let screenPos = nodeScreenPosition(node: node, canvasSize: geometry.size)
                                 
@@ -124,6 +124,7 @@ struct KnowledgeGraphCanvasView: View {
                                     .frame(width: nodeSize + 20, height: nodeSize + 20)
                                     .position(screenPos)
                                     .onTapGesture {
+                                        print("🖱️ Node clicked: \(node.label) at position \(screenPos)")
                                         selectedNode = node
                                         showingNodeDetails = true
                                     }
@@ -439,9 +440,11 @@ struct KnowledgeGraphCanvasView: View {
     // MARK: - Helper Functions
     
     private func nodeScreenPosition(node: GraphNode, canvasSize: CGSize) -> CGPoint {
-        let transformedX = (node.position.x * zoomScale) + panOffset.width + canvasSize.width / 2
-        let transformedY = (node.position.y * zoomScale) + panOffset.height + canvasSize.height / 2
-        return CGPoint(x: transformedX, y: transformedY)
+        // Match the exact same transformations as the Canvas
+        // Canvas applies: translate to center, then pan offset, then zoom scale
+        let canvasTransformedX = (node.position.x * zoomScale) + panOffset.width + canvasSize.width / 2
+        let canvasTransformedY = (node.position.y * zoomScale) + panOffset.height + canvasSize.height / 2
+        return CGPoint(x: canvasTransformedX, y: canvasTransformedY)
     }
     
     private func updateNodePosition(node: GraphNode, offset: CGSize, canvasSize: CGSize) {

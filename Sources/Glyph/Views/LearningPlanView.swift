@@ -220,15 +220,37 @@ struct LearningPlanView: View {
             
             await MainActor.run {
                 learningPlanData = result
+                
+                // Debug log the received data structure
+                print("🔍 DEBUG: Learning plan data received:")
+                print("🔍 DEBUG: Total concepts: \(result["total_concepts"] as? Int ?? 0)")
+                print("🔍 DEBUG: Sources used: \(result["sources_used"] as? Int ?? 0)")
+                
+                if let conceptGroups = result["concept_groups"] as? [String: Any] {
+                    print("🔍 DEBUG: Concept groups keys: \(conceptGroups.keys)")
+                    for (phase, concepts) in conceptGroups {
+                        if let conceptArray = concepts as? [[String: Any]] {
+                            print("🔍 DEBUG: Phase '\(phase)' has \(conceptArray.count) concepts")
+                            if let firstConcept = conceptArray.first {
+                                let sourceRefs = firstConcept["source_references"] as? [String] ?? []
+                                print("🔍 DEBUG: First concept '\(firstConcept["name"] as? String ?? "none")' has \(sourceRefs.count) source references")
+                                print("🔍 DEBUG: Source references: \(sourceRefs)")
+                            }
+                        }
+                    }
+                }
+                
                 // Auto-select first phase
                 if let conceptGroups = result["concept_groups"] as? [String: Any] {
                     selectedPhase = conceptGroups.keys.first
+                    print("🔍 DEBUG: Auto-selected phase: \(selectedPhase ?? "none")")
                 }
             }
             
         } catch {
             await MainActor.run {
                 errorMessage = "Failed to generate learning plan: \(error.localizedDescription)"
+                print("❌ Learning plan generation error: \(error)")
             }
         }
         
