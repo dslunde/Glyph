@@ -22,12 +22,16 @@ let package = Package(
                 .product(name: "Numerics", package: "swift-numerics"),
                 .product(name: "Gzip", package: "GzipSwift")
             ],
+            exclude: [
+                "__pycache__"
+            ],
             resources: [
                 .process("Resources"),
                 .copy("PythonAPIService.py"),
                 .copy("source_collection_workflow.py"),
                 .copy("knowledge_graph_generation.py"),
-                .copy("enhanced_source_processing.py")
+                .copy("enhanced_source_processing.py"),
+                .copy("advanced_analysis.py")
             ],
             swiftSettings: [
                 // Disable strict concurrency checking for PythonKit compatibility
