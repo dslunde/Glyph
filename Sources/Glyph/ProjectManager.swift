@@ -162,6 +162,23 @@ class ProjectManager: ObservableObject {
         saveProjects()
     }
     
+    func renameProject(_ project: Project, to newName: String) {
+        guard let index = projects.firstIndex(where: { $0.id == project.id }) else { return }
+        
+        // Explicitly signal that we're about to change the object
+        objectWillChange.send()
+        
+        projects[index].name = newName
+        projects[index].updateLastModified()
+        
+        // Update selected project if it's the one we just renamed
+        if selectedProject?.id == project.id {
+            selectedProject = projects[index]
+        }
+        
+        saveProjects()
+    }
+    
     func selectProject(_ project: Project) {
         selectedProject = project
     }

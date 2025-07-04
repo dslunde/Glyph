@@ -23,6 +23,10 @@ struct GlyphApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .onAppear {
+                    // Bring window to front on launch
+                    NSApplication.shared.activate(ignoringOtherApps: true)
+                }
         }
     }
 }
@@ -31,6 +35,10 @@ struct ContentView: View {
     @StateObject private var projectManager = ProjectManager()
     @StateObject private var authManager = AuthenticationManager()
     @StateObject private var environmentService = EnvironmentService.shared
+    
+    @State private var showingRenameProject = false
+    @State private var projectToRename: Project?
+    @State private var newProjectName = ""
     
     @Environment(\.colorScheme) private var colorScheme
     
@@ -55,14 +63,25 @@ struct ContentView: View {
                             
                             Spacer()
                             
-                            Button(action: {
-                                projectManager.showingCreateProject = true
-                            }) {
-                                Image(systemName: "plus")
-                                    .font(.title2)
+                            HStack(spacing: 8) {
+                                Button(action: {
+                                    projectManager.showingCreateProject = true
+                                }) {
+                                    Image(systemName: "plus")
+                                        .font(.title2)
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .help("Create New Project")
+                                
+                                Button(action: {
+                                    authManager.logout()
+                                }) {
+                                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                                        .font(.title2)
+                                }
+                                .buttonStyle(.bordered)
+                                .help("Logout")
                             }
-                            .buttonStyle(.borderedProminent)
-                            .help("Create New Project")
                         }
                         .padding()
                         
@@ -92,6 +111,11 @@ struct ContentView: View {
                                 ProjectRowView(project: project)
                                     .tag(project)
                                     .contextMenu {
+                                        Button("Rename") {
+                                            projectToRename = project
+                                            newProjectName = project.name
+                                            showingRenameProject = true
+                                        }
                                         Button("Delete", role: .destructive) {
                                             projectManager.deleteProject(project)
                                         }
@@ -221,6 +245,20 @@ struct ContentView: View {
                     Button("OK") { }
                 } message: {
                     Text(projectManager.errorMessage)
+                }
+                .sheet(isPresented: $showingRenameProject) {
+                    RenameProjectView(
+                        projectName: $newProjectName,
+                        onSave: {
+                            if let project = projectToRename {
+                                projectManager.renameProject(project, to: newProjectName)
+                            }
+                            showingRenameProject = false
+                        },
+                        onCancel: {
+                            showingRenameProject = false
+                        }
+                    )
                 }
             } else {
                 // Login View
@@ -2503,6 +2541,9 @@ struct LoginView: View {
                     SecureField("Enter password", text: $password)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 300)
+                        .onSubmit {
+                            performLogin()
+                        }
                 }
                 
                 VStack(spacing: 12) {
@@ -2563,6 +2604,46 @@ struct LoginView: View {
 // MARK: - Tab Views
 
 // LearningPlanView is now implemented in Sources/Glyph/Views/LearningPlanView.swift
+
+// MARK: - Rename Project View
+
+struct RenameProjectView: View {
+    @Binding var projectName: String
+    let onSave: () -> Void
+    let onCancel: () -> Void
+    
+    var body: some View {
+        VStack(spacing: 20) {
+            Text("Rename Project")
+                .font(.title2)
+                .fontWeight(.bold)
+            
+            TextField("Project Name", text: $projectName)
+                .textFieldStyle(.roundedBorder)
+                .frame(width: 300)
+                .onSubmit {
+                    if !projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        onSave()
+                    }
+                }
+            
+            HStack(spacing: 12) {
+                Button("Cancel") {
+                    onCancel()
+                }
+                .buttonStyle(.bordered)
+                
+                Button("Save") {
+                    onSave()
+                }
+                .buttonStyle(.borderedProminent)
+                .disabled(projectName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+        }
+        .padding()
+        .frame(width: 400, height: 200)
+    }
+}
 
 struct KnowledgeGraphView: View {
     let project: Project
